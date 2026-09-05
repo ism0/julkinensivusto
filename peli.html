@@ -126,6 +126,9 @@
             .joystick, .right-actions { display: block !important; }
         }
 
+        /* Also ensure via JS for browsers that don't support pointer media queries */
+
+
         @media (max-width: 800px) {
             .overlay { font-size: 1.05rem; }
         }
@@ -430,63 +433,86 @@ const keys = { a: false, d: false, w: false, space: false, shoot: false };
         function start(e) {
             e.preventDefault();
             if (activePointer !== null) return;
-            activePointer = e.pointerId;
-            baseRect = base.getBoundingClientRect();
-            base.setPointerCapture(activePointer);
-            onMove(e);
+        // support both PointerEvent and TouchEvent wrappers
+        const pid = (e.pointerId !== undefined) ? e.pointerId : ('touch-' + (e.changedTouches ? e.changedTouches[0].identifier : '0'));
+        activePointer = pid;
+        baseRect = base.getBoundingClientRect();
+        try { if (e.pointerId !== undefined) base.setPointerCapture(e.pointerId); } catch(_) {}
+        onMove(e);
+    }
+    function onMove(e) {
+        // normalize event for touch vs pointer
+        let clientX = e.clientX, clientY = e.clientY;
+        if (e.touches && e.touches.length) { clientX = e.touches[0].clientX; clientY = e.touches[0].clientY; }
+        const cx = baseRect.left + baseRect.width / 2;
+        const cy = baseRect.top + baseRect.height / 2;
+        const dx = clientX - cx;
+        const dy = clientY - cy;
+        const r = Math.hypot(dx, dy);
+        const maxR = maxKnobDist();
+        const clampedR = Math.min(r, maxR);
+        const nx = (r === 0) ? 0 : dx / r;
+        const ny = (r === 0) ? 0 : dy / r;
+        knob.style.transform = `translate(${nx * clampedR}px, ${ny * clampedR}px)`;
+
+        // Map joystick x-axis to left/right
+        const xNorm = dx / maxR;
+        keys.a = xNorm < -0.35;
+        keys.d = xNorm > 0.35;
+
+        // Upwards quick push triggers jump (one-shot)
+        const yNorm = dy / maxR;
+        if (yNorm < -0.6 && gameState === 'PLAYING') {
+            keys.w = true;
+            setTimeout(()=>{ keys.w = false; }, 150);
         }
-        function onMove(e) {
-            if (activePointer !== e.pointerId) return;
-            const cx = baseRect.left + baseRect.width / 2;
-            const cy = baseRect.top + baseRect.height / 2;
-            const dx = e.clientX - cx;
-            const dy = e.clientY - cy;
-            const r = Math.hypot(dx, dy);
-            const maxR = maxKnobDist();
-            const clampedR = Math.min(r, maxR);
-            const nx = (r === 0) ? 0 : dx / r;
-            const ny = (r === 0) ? 0 : dy / r;
-            knob.style.transform = `translate(${nx * clampedR}px, ${ny * clampedR}px)`;
+    }
+    function end(e) {
+        // release for both pointer and touch
+        try { if (e.pointerId !== undefined) base.releasePointerCapture(e.pointerId); } catch(_) {}
+        activePointer = null;
+        knob.style.transform = 'translate(-50%,-50%)';
+        keys.a = false; keys.d = false; keys.w = false;
+    }
 
-            // Map joystick x-axis to left/right
-            const xNorm = dx / maxR;
-            keys.a = xNorm < -0.35;
-            keys.d = xNorm > 0.35;
+    // Pointer event handlers (preferred)
+    base.addEventListener('pointerdown', start, { passive: false });
+    base.addEventListener('pointermove', (e)=>{ if (e.buttons || e.pointerType) onMove(e); }, { passive: false });
+    base.addEventListener('pointerup', end);
+    base.addEventListener('pointercancel', end);
 
-            // Upwards quick push triggers jump (one-shot)
-            const yNorm = dy / maxR;
-            if (yNorm < -0.6 && gameState === 'PLAYING') {
-                // trigger brief jump press
-                keys.w = true;
-                setTimeout(()=>{ keys.w = false; }, 150);
+    // Touch fallback for browsers that don't emit pointer events reliably (Samsung Internet edge cases)
+    base.addEventListener('touchstart', (e)=>{ e.preventDefault(); start(e); }, { passive: false });
+    base.addEventListener('touchmove', (e)=>{ e.preventDefault(); onMove(e); }, { passive: false });
+    base.addEventListener('touchend', (e)=>{ e.preventDefault(); end(e); });
+    base.addEventListener('touchcancel', (e)=>{ e.preventDefault(); end(e); });
+
+    // Action buttons
+    const jb = document.getElementById('tc-jump');
+    const sb = document.getElementById('tc-shoot');
+    if (jb) { jb.addEventListener('pointerdown', (e)=>{ e.preventDefault(); keys.w = true; }); jb.addEventListener('pointerup', (e)=>{ keys.w = false; }); jb.addEventListener('touchstart', (e)=>{ e.preventDefault(); keys.w = true; }); jb.addEventListener('touchend', (e)=>{ e.preventDefault(); keys.w = false; }); }
+    if (sb) { sb.addEventListener('pointerdown', (e)=>{ e.preventDefault(); if (gameState === 'PLAYING' && typeof player !== 'undefined' && player && typeof player.shoot === 'function') player.shoot(); }); sb.addEventListener('touchstart', (e)=>{ e.preventDefault(); if (gameState === 'PLAYING' && typeof player !== 'undefined' && player && typeof player.shoot === 'function') player.shoot(); }); }
+
+    // Prevent page scroll when interacting with game container
+    document.body.addEventListener('touchmove', (ev) => {
+        if (ev.target.closest && ev.target.closest('#game-container')) ev.preventDefault();
+    }, { passive: false });
+
+    // If this is a touch device but CSS media query failed, force-show controls and adjust start-screen text
+    function ensureTouchUI() {
+        const touch = (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) || ('ontouchstart' in window) || navigator.userAgent.includes('Mobi');
+        if (touch) {
+            const els = document.querySelectorAll('.joystick, .right-actions');
+            els.forEach(el => { el.style.display = 'block'; });
+            const info = document.querySelector('#start-screen .controls-info');
+            if (info) {
+                info.innerHTML = '<p style="margin-bottom:8px;"><strong>Ohjaus puhelimella:</strong></p><p style="margin-bottom:5px;">Vasemmalla: virtuaalinen joystick — liiku; Oikealla: ▲ hyppy, ● ammus</p><p style="margin-bottom:0;">Käännä laite vaakaan pelataksesi vaakatasoa varten.</p>';
             }
         }
-        function end(e) {
-            if (activePointer !== e.pointerId) return;
-            try { base.releasePointerCapture(activePointer); } catch(_) {}
-            activePointer = null;
-            knob.style.transform = 'translate(-50%,-50%)';
-            keys.a = false; keys.d = false; keys.w = false;
-        }
+    }
+    ensureTouchUI();
 
-        base.addEventListener('pointerdown', start, { passive: false });
-        base.addEventListener('pointermove', onMove, { passive: false });
-        base.addEventListener('pointerup', end);
-        base.addEventListener('pointercancel', end);
-
-        // Action buttons
-        const jb = document.getElementById('tc-jump');
-        const sb = document.getElementById('tc-shoot');
-        jb.addEventListener('pointerdown', (e)=>{ e.preventDefault(); keys.w = true; });
-        jb.addEventListener('pointerup', (e)=>{ keys.w = false; });
-        sb.addEventListener('pointerdown', (e)=>{ e.preventDefault(); if (gameState === 'PLAYING') player.shoot(); });
-
-        // Prevent page scroll when interacting with game container
-        document.body.addEventListener('touchmove', (ev) => {
-            if (ev.target.closest && ev.target.closest('#game-container')) ev.preventDefault();
-        }, { passive: false });
-
-    } catch(e) { /* ignore for older browsers */ }
+} catch(e) { /* ignore for older browsers */ }
 })();
 
 window.addEventListener('keydown', (e) => {

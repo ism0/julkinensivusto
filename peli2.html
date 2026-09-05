@@ -306,10 +306,12 @@
           keys.left = xNorm < -0.25; keys.right = xNorm > 0.25; keys.up = yNorm < -0.25; keys.down = yNorm > 0.25;
         }
         function end(e){ if (active !== e.pointerId) return; try{ base.releasePointerCapture(active);}catch(_){} active=null; knob.style.transform='translate(-50%,-50%)'; keys.left=false; keys.right=false; keys.up=false; keys.down=false; }
-        base.addEventListener('pointerdown', start, {passive:false}); base.addEventListener('pointermove', onMove, {passive:false}); base.addEventListener('pointerup', end); base.addEventListener('pointercancel', end);
+        base.addEventListener('pointerdown', start, {passive:false}); base.addEventListener('pointermove', (e)=>{ if (e.buttons || e.pointerType) onMove(e); }, {passive:false}); base.addEventListener('pointerup', end); base.addEventListener('pointercancel', end);
+        // touch fallback
+        base.addEventListener('touchstart', (e)=>{ e.preventDefault(); start(e); }, {passive:false}); base.addEventListener('touchmove', (e)=>{ e.preventDefault(); onMove(e); }, {passive:false}); base.addEventListener('touchend', (e)=>{ e.preventDefault(); end(e); }); base.addEventListener('touchcancel', (e)=>{ e.preventDefault(); end(e); });
 
         // shoot button
-        const sb = document.getElementById('tc-shoot'); if (sb) { sb.addEventListener('pointerdown', (e)=>{ e.preventDefault(); playSound('shoot'); if (typeof player !== 'undefined' && player && typeof player.shoot === 'function') { player.shoot(); } else { spawnPlayerBulletsAtTouch({ touches: [{ clientX: e.clientX, clientY: e.clientY }] }); } }); }
+                const sb = document.getElementById('tc-shoot'); if (sb) { sb.addEventListener('pointerdown', (e)=>{ e.preventDefault(); playSound('shoot'); if (typeof player !== 'undefined' && player && typeof player.shoot === 'function') { player.shoot(); } else { spawnPlayerBulletsAtTouch({ touches: [{ clientX: e.clientX, clientY: e.clientY }] }); } }); sb.addEventListener('touchstart', (e)=>{ e.preventDefault(); playSound('shoot'); if (typeof player !== 'undefined' && player && typeof player.shoot === 'function') { player.shoot(); } else { const t = e.touches && e.touches[0]; spawnPlayerBulletsAtTouch({ touches: [{ clientX: t ? t.clientX : e.clientX, clientY: t ? t.clientY : e.clientY }] }); } }); }
 
         // tap to aim & shoot as before (but coordinates are logical, translate client to canvas logical coords)
         canvas.addEventListener('touchstart', (e)=>{
