@@ -125,6 +125,9 @@
     .right-actions .tc-btn { width:18vmin; height:18vmin; max-width:120px; max-height:120px; border-radius:50%; background: rgba(255,255,255,0.08); border:2px solid rgba(255,255,255,0.12); color:#fff; display:flex; align-items:center; justify-content:center; touch-action:none; }
 
     @media (min-width:801px) { .joystick, .right-actions { display:none !important; } }
+
+    /* Ensure touch devices always show touch controls regardless of screen width */
+    @media (pointer: coarse) { .joystick, .right-actions { display:block !important; } }
   </style>
 </head>
 <body>
@@ -292,7 +295,7 @@
         // create joystick
         const jl = document.createElement('div'); jl.className = 'joystick'; jl.innerHTML = '<div class="joy-base"></div><div class="joy-knob"></div>';
         const ra = document.createElement('div'); ra.className = 'right-actions'; ra.innerHTML = '<button id="tc-shoot" class="tc-btn">●</button>';
-        document.body.appendChild(jl); document.body.appendChild(ra);
+        const container = document.getElementById('game-container') || document.body; container.appendChild(jl); container.appendChild(ra);
 
         const base = jl.querySelector('.joy-base'); const knob = jl.querySelector('.joy-knob');
         let active = null; let baseRect = null;
@@ -306,7 +309,7 @@
         base.addEventListener('pointerdown', start, {passive:false}); base.addEventListener('pointermove', onMove, {passive:false}); base.addEventListener('pointerup', end); base.addEventListener('pointercancel', end);
 
         // shoot button
-        const sb = document.getElementById('tc-shoot'); if (sb) { sb.addEventListener('pointerdown', (e)=>{ e.preventDefault(); playSound('shoot'); spawnPlayerBulletsAtTouch({ touches: [{ clientX: player.x, clientY: player.y }] }); }); }
+        const sb = document.getElementById('tc-shoot'); if (sb) { sb.addEventListener('pointerdown', (e)=>{ e.preventDefault(); playSound('shoot'); if (typeof player !== 'undefined' && player && typeof player.shoot === 'function') { player.shoot(); } else { spawnPlayerBulletsAtTouch({ touches: [{ clientX: e.clientX, clientY: e.clientY }] }); } }); }
 
         // tap to aim & shoot as before (but coordinates are logical, translate client to canvas logical coords)
         canvas.addEventListener('touchstart', (e)=>{

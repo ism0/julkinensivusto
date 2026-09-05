@@ -121,6 +121,11 @@
             .joystick, .right-actions { display: none !important; }
         }
 
+        /* Ensure touch devices always show touch controls regardless of screen width */
+        @media (pointer: coarse) {
+            .joystick, .right-actions { display: block !important; }
+        }
+
         @media (max-width: 800px) {
             .overlay { font-size: 1.05rem; }
         }
