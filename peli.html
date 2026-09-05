@@ -110,6 +110,45 @@
             transform: scale(1.08);
             box-shadow: 0 6px 20px rgba(255, 64, 129, 0.6);
         }
+
+        /* Touch controls */
+        #touch-controls {
+            position: absolute;
+            bottom: 18px;
+            left: 16px;
+            right: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            pointer-events: none;
+            z-index: 25;
+        }
+        #touch-controls .group { pointer-events: auto; display:flex; gap:10px; }
+        .tc-btn {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.08);
+            border: 2px solid rgba(255,255,255,0.12);
+            color: #fff;
+            font-size: 20px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            backdrop-filter: blur(4px);
+            user-select: none;
+        }
+
+        @media (min-width: 801px) {
+            #touch-controls { display: none !important; }
+        }
+
+        @media (max-width: 800px) {
+            #game-container { width: 100vw; height: 100vh; }
+            canvas { width: 100vw; height: 100vh; }
+            .overlay { font-size: 1.05rem; }
+        }
     </style>
 </head>
 <body>
@@ -323,7 +362,99 @@ function playMusicStep(step) {
     }
 }
 
+// responsive canvas & touch support
+let stars = [];
+let cityBuildings = [];
+
+function resizeCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(320, window.innerWidth);
+    const h = Math.max(320, window.innerHeight);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    initStars();
+    initBuildings();
+}
+
+function initStars(){
+    stars.length = 0;
+    for (let i = 0; i < 70; i++) {
+        stars.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * (canvas.height * 0.7),
+            size: Math.random() * 2 + 1,
+            speed: Math.random() * 0.2 + 0.05,
+            color: ['#ffffff', '#e0f7fa', '#ffe082', '#ea80fc'][Math.floor(Math.random() * 4)]
+        });
+    }
+}
+
+function initBuildings() {
+    cityBuildings.length = 0;
+    for (let x = 0; x < canvas.width; x += 40) {
+        const h = 80 + Math.random() * 120;
+        cityBuildings.push({ x, w: 42, h });
+    }
+}
+
+window.addEventListener('resize', () => { cancelAnimationFrame(animationFrameId); resizeCanvas(); if (gameState === 'PLAYING') runGameLoop(); });
+resizeCanvas();
+
 const keys = { a: false, d: false, w: false, space: false, shoot: false };
+
+// Create simple touch controls for mobile (left/right/jump/shoot)
+(function createTouchControls(){
+    try {
+        const container = document.getElementById('game-container');
+        if (!container) return;
+        if (document.getElementById('touch-controls')) return;
+        const tc = document.createElement('div');
+        tc.id = 'touch-controls';
+        tc.innerHTML = `
+            <div class="group left">
+                <button id="btn-left" class="tc-btn">◀</button>
+                <button id="btn-right" class="tc-btn">▶</button>
+                <button id="btn-jump" class="tc-btn">▲</button>
+            </div>
+            <div class="group right">
+                <button id="btn-shoot" class="tc-btn">●</button>
+            </div>
+        `;
+        container.appendChild(tc);
+
+        const map = {
+            'btn-left': ['a', true],
+            'btn-right': ['d', true],
+            'btn-jump': ['w', true],
+            'btn-shoot': ['shoot', true]
+        };
+
+        Object.keys(map).forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const keyName = map[id][0];
+            el.addEventListener('touchstart', (ev) => { ev.preventDefault(); if (keyName === 'shoot') { if (!keys.shoot && gameState === 'PLAYING') player.shoot(); keys.shoot = true; } else { keys[keyName] = true; } }, { passive: false });
+            el.addEventListener('touchend', (ev) => { ev.preventDefault(); if (keyName === 'shoot') { keys.shoot = false; } else { keys[keyName] = false; } }, { passive: false });
+            // mouse support for big buttons on desktop
+            el.addEventListener('mousedown', (ev)=>{ ev.preventDefault(); if (keyName === 'shoot') { if (!keys.shoot && gameState === 'PLAYING') player.shoot(); keys.shoot = true; } else { keys[keyName] = true; } });
+            el.addEventListener('mouseup', ()=>{ if (keyName === 'shoot') keys.shoot = false; else keys[keyName] = false; });
+        });
+
+        // prevent scrolling when interacting with game area
+        document.body.addEventListener('touchmove', (ev) => {
+            if (ev.target.closest && ev.target.closest('#game-container')) ev.preventDefault();
+        }, { passive: false });
+
+        // canvas touch: tap to shoot
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (gameState === 'PLAYING') player.shoot();
+        }, { passive: false });
+    } catch(e) { /* ignore on older browsers */ }
+})();
 
 window.addEventListener('keydown', (e) => {
     if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') keys.a = true;
