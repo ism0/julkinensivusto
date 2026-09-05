@@ -113,6 +113,14 @@
       transition: opacity 0.1s ease-out;
       z-index: 15;
     }
+
+    /* Touch controls */
+    #touch-controls { position: absolute; bottom: 18px; left: 16px; right: 16px; display:flex; justify-content:space-between; z-index:25; pointer-events:none; }
+    #touch-controls .group { pointer-events:auto; display:flex; gap:10px; }
+    .tc-btn { width:56px; height:56px; border-radius:50%; background: rgba(255,255,255,0.08); border:2px solid rgba(255,255,255,0.12); color:#fff; font-size:18px; display:flex; align-items:center; justify-content:center; }
+
+    @media (min-width:801px) { #touch-controls { display:none !important; } }
+    @media (max-width:800px) { canvas { width:100vw; height:100vh; } }
   </style>
 </head>
 <body>
@@ -231,12 +239,88 @@
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
 
+    // Logical game size for consistent coordinates across devices
+    const LOGICAL_W = 900;
+    const LOGICAL_H = 600;
+
     function resizeCanvas() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      const dpr = window.devicePixelRatio || 1;
+      const scale = Math.min(window.innerWidth / LOGICAL_W, window.innerHeight / LOGICAL_H);
+      const cssW = Math.floor(LOGICAL_W * scale);
+      const cssH = Math.floor(LOGICAL_H * scale);
+      canvas.style.width = cssW + 'px';
+      canvas.style.height = cssH + 'px';
+      canvas.width = Math.floor(LOGICAL_W * dpr * scale);
+      canvas.height = Math.floor(LOGICAL_H * dpr * scale);
+      ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
     }
-    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('resize', () => { resizeCanvas(); });
     resizeCanvas();
+
+    // Touch handling: aim with touch, tap to shoot, and simple on-screen buttons
+    (function setupTouch(){
+      try {
+        const container = document.body;
+        const tc = document.createElement('div');
+        tc.id = 'touch-controls';
+        tc.innerHTML = `
+          <div class="group left">
+            <button id="btn-up" class="tc-btn">▲</button>
+            <button id="btn-left" class="tc-btn">◀</button>
+            <button id="btn-right" class="tc-btn">▶</button>
+          </div>
+          <div class="group right">
+            <button id="btn-shoot" class="tc-btn">●</button>
+          </div>
+        `;
+        document.body.appendChild(tc);
+
+        const btnUp = document.getElementById('btn-up');
+        const btnLeft = document.getElementById('btn-left');
+        const btnRight = document.getElementById('btn-right');
+        const btnShoot = document.getElementById('btn-shoot');
+
+        function prevent(e){ e.preventDefault(); }
+        [btnUp, btnLeft, btnRight, btnShoot].forEach(b => { if (!b) return; b.addEventListener('touchstart', prevent, {passive:false}); b.addEventListener('touchmove', prevent, {passive:false}); });
+
+        btnUp && btnUp.addEventListener('touchstart', ()=>{ keys.up = true; });
+        btnUp && btnUp.addEventListener('touchend', ()=>{ keys.up = false; });
+        btnLeft && btnLeft.addEventListener('touchstart', ()=>{ keys.left = true; });
+        btnLeft && btnLeft.addEventListener('touchend', ()=>{ keys.left = false; });
+        btnRight && btnRight.addEventListener('touchstart', ()=>{ keys.right = true; });
+        btnRight && btnRight.addEventListener('touchend', ()=>{ keys.right = false; });
+        btnShoot && btnShoot.addEventListener('touchstart', (e)=>{ e.preventDefault(); playSound('shoot'); spawnPlayerBulletsAtTouch(e); }, {passive:false});
+
+        // tap to aim & shoot
+        canvas.addEventListener('touchstart', (e)=>{
+          e.preventDefault();
+          const t = e.touches[0];
+          mouse.x = t.clientX;
+          mouse.y = t.clientY;
+          playSound('shoot');
+          spawnPlayerBulletsAtTouch({ touches: [t] });
+        }, {passive:false});
+        canvas.addEventListener('touchmove', (e)=>{ e.preventDefault(); const t = e.touches[0]; mouse.x = t.clientX; mouse.y = t.clientY; }, {passive:false});
+
+        function spawnPlayerBulletsAtTouch(e){
+          if (!isPlaying || isPaused) return;
+          const t = e.touches[0];
+          if (!t) return;
+          const w = weapons[currentWeaponIndex];
+          const ang = Math.atan2(t.clientY - player.y, t.clientX - player.x);
+          if (w.count === 1) {
+            playerBullets.push({ x: player.x + Math.cos(ang) * player.radius, y: player.y + Math.sin(ang) * player.radius, vx: Math.cos(ang) * w.speed, vy: Math.sin(ang) * w.speed, radius: w.radius, color: w.color });
+          } else {
+            const startAngle = ang - w.spread / 2;
+            const step = w.spread / (w.count - 1);
+            for (let i = 0; i < w.count; i++) {
+              const a = startAngle + step * i;
+              playerBullets.push({ x: player.x + Math.cos(a) * player.radius, y: player.y + Math.sin(a) * player.radius, vx: Math.cos(a) * w.speed, vy: Math.sin(a) * w.speed, radius: w.radius, color: w.color });
+            }
+          }
+        }
+      } catch(e) { }
+    })();
 
     // Pelin muuttujat
     let isPlaying = false;
@@ -247,11 +331,11 @@
 
     // Ohjauslippueet
     let keys = { up: false, down: false, left: false, right: false };
-    let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+    let mouse = { x: LOGICAL_W / 2, y: LOGICAL_H / 2 };
 
     let player = {
-      x: canvas.width / 2,
-      y: canvas.height / 2,
+      x: LOGICAL_W / 2,
+      y: LOGICAL_H / 2,
       radius: 22,
       speed: 350,
       angle: 0
@@ -364,11 +448,11 @@
     function spawnEnemy() {
       let x, y;
       if (Math.random() < 0.5) {
-        x = Math.random() < 0.5 ? -30 : canvas.width + 30;
-        y = Math.random() * canvas.height;
+      x = Math.random() < 0.5 ? -30 : LOGICAL_W + 30;
+      y = Math.random() * LOGICAL_H;
       } else {
-        x = Math.random() * canvas.width;
-        y = Math.random() < 0.5 ? -30 : canvas.height + 30;
+      x = Math.random() * LOGICAL_W;
+      y = Math.random() < 0.5 ? -30 : LOGICAL_H + 30;
       }
 
       enemies.push({
@@ -435,8 +519,8 @@
       player.y += moveY * player.speed * delta;
 
       // Pysy ruudun sisällä
-      player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
-      player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+      player.x = Math.max(player.radius, Math.min(LOGICAL_W - player.radius, player.x));
+      player.y = Math.max(player.radius, Math.min(LOGICAL_H - player.radius, player.y));
 
       // 3. Viholliset
       if (Date.now() - lastSpawnTime > spawnInterval && enemies.length < maxEnemiesOnScreen) {
@@ -504,7 +588,7 @@
           }
         }
 
-        if (hit || b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+        if (hit || b.x < 0 || b.x > LOGICAL_W || b.y < 0 || b.y > LOGICAL_H) {
           playerBullets.splice(i, 1);
         }
       }
@@ -521,7 +605,7 @@
           continue;
         }
 
-        if (eb.x < 0 || eb.x > canvas.width || eb.y < 0 || eb.y > canvas.height) {
+        if (eb.x < 0 || eb.x > LOGICAL_W || eb.y < 0 || eb.y > LOGICAL_H) {
           enemyBullets.splice(i, 1);
         }
       }
@@ -552,11 +636,11 @@
 
       // Tausta
       ctx.fillStyle = '#dcb168';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
 
       ctx.fillStyle = '#c79c52';
-      for (let i = 0; i < canvas.width; i += 100) {
-        for (let j = 0; j < canvas.height; j += 100) {
+      for (let i = 0; i < LOGICAL_W; i += 100) {
+        for (let j = 0; j < LOGICAL_H; j += 100) {
           ctx.beginPath();
           ctx.arc(i + 30, j + 40, 3, 0, Math.PI * 2);
           ctx.fill();
@@ -655,7 +739,7 @@
           ctx.shadowColor = '#000';
           ctx.shadowBlur = 8;
           ctx.globalAlpha = Math.min(1, popupTimer);
-          ctx.fillText(popupText, canvas.width / 2, canvas.height / 2 - 70);
+          ctx.fillText(popupText, LOGICAL_W / 2, LOGICAL_H / 2 - 70);
           ctx.restore();
         }
       }
@@ -701,8 +785,8 @@
       scoreEl.innerText = '0';
       livesEl.innerText = 'Elämät: ❤️ ❤️ ❤️';
 
-      player.x = canvas.width / 2;
-      player.y = canvas.height / 2;
+      player.x = LOGICAL_W / 2;
+      player.y = LOGICAL_H / 2;
 
       startScreen.classList.add('hidden');
       gameoverScreen.classList.add('hidden');
