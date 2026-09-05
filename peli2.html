@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kasvipeli - Aavikon Taistelu</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+    }
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #dcb168;
+      color: #fff;
+    }
+
+    #gameCanvas {
+      display: block;
+      background: #dcb168;
+      cursor: crosshair;
+    }
+
+    /* HUD (Pistetaulu, Ase & Elämät) */
+    #hud {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 20px;
+      font-weight: bold;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+      z-index: 10;
+      pointer-events: none;
+    }
+    .hud-box {
+      background: rgba(0, 0, 0, 0.65);
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: 2px solid #8b5a2b;
+    }
+    .weapon-text {
+      color: #39ff14;
+      font-size: 18px;
+      margin-top: 4px;
+    }
+
+    /* Valikot */
+    .overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(20, 15, 5, 0.88);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 20;
+      text-align: center;
+    }
+    .hidden {
+      display: none !important;
+    }
+
+    h1 {
+      font-size: 50px;
+      color: #ffaa00;
+      margin-bottom: 10px;
+      text-shadow: 0 0 10px #ff5500;
+    }
+    p {
+      font-size: 18px;
+      color: #ddd;
+      max-width: 500px;
+      line-height: 1.6;
+      margin-bottom: 25px;
+    }
+
+    .btn {
+      background: linear-gradient(135deg, #4caf50, #2e7d32);
+      color: white;
+      border: none;
+      padding: 15px 40px;
+      font-size: 22px;
+      font-weight: bold;
+      border-radius: 30px;
+      cursor: pointer;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+      transition: transform 0.1s, background 0.2s;
+    }
+    .btn:hover {
+      transform: scale(1.05);
+      background: linear-gradient(135deg, #66bb6a, #388e3c);
+    }
+
+    /* Vahinkotehoste */
+    #damage-flash {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(255, 0, 0, 0.35);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.1s ease-out;
+      z-index: 15;
+    }
+  </style>
+</head>
+<body>
+
+  <canvas id="gameCanvas"></canvas>
+  <div id="damage-flash"></div>
+
+  <div id="hud">
+    <div class="hud-box">
+      Pisteet: <span id="score">0</span> | Paras: <span id="highscore">0</span>
+      <div class="weapon-text">Ase: <span id="weapon-name">Perussiemen</span></div>
+    </div>
+    <div class="hud-box" id="lives-display">Elämät: ❤️ ❤️ ❤️</div>
+  </div>
+
+  <!-- Aloitusnäyttö -->
+  <div id="start-screen" class="overlay">
+    <h1>KASVIPELI</h1>
+    <p>Olet sankarikasvi aavikolla! Tuhoa pahiskaktukset ja saat <b>joka taposta uuden aseen</b>!<br><br>
+    <b>Ohjaus:</b><br>
+    • Liiku: <b>WASD</b> tai <b>Nuolinäppäimet</b><br>
+    • Tähtää: <b>Hiiri</b><br>
+    • Ammu: <b>Hiiren vasen painike</b><br>
+    • Tauko: <b>P</b>
+    </p>
+    <button class="btn" id="start-btn">ALOITA PELI</button>
+  </div>
+
+  <!-- Taukovalikko -->
+  <div id="pause-screen" class="overlay hidden">
+    <h1>PELI PYSÄYTETTY</h1>
+    <p>Paina <b>P</b> jatkaaksesi peliä.</p>
+  </div>
+
+  <!-- Game Over -näyttö -->
+  <div id="gameover-screen" class="overlay hidden">
+    <h1>PELI PÄÄTTYI!</h1>
+    <p>Saavutit <b><span id="final-score">0</span></b> pistettä.</p>
+    <button class="btn" id="restart-btn">PELAA UUDELLEEN</button>
+  </div>
+
+  <script>
+    // --- ÄÄNISYNTETISAATTORI ---
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+
+    function initAudio() {
+      if (!audioCtx) audioCtx = new AudioContext();
+    }
+
+    function playSound(type) {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
+
+      if (type === 'shoot') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(500, now);
+        osc.frequency.exponentialRampToValueAtTime(120, now + 0.12);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.12);
+        osc.start(now);
+        osc.stop(now + 0.12);
+      } else if (type === 'upgrade') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(250, now);
+        osc.frequency.exponentialRampToValueAtTime(750, now + 0.25);
+        gain.gain.setValueAtTime(0.35, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+        osc.start(now);
+        osc.stop(now + 0.25);
+      } else if (type === 'enemyShoot') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(280, now);
+        osc.frequency.exponentialRampToValueAtTime(90, now + 0.18);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.18);
+        osc.start(now);
+        osc.stop(now + 0.18);
+      } else if (type === 'hit') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(160, now);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 0.15);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.15);
+        osc.start(now);
+        osc.stop(now + 0.15);
+      } else if (type === 'hurt') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(140, now);
+        osc.frequency.linearRampToValueAtTime(30, now + 0.3);
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+        osc.start(now);
+        osc.stop(now + 0.3);
+      }
+    }
+
+    // --- ASEVALIKOIMA ---
+    const weapons = [
+      { name: "Perussiemen", color: "#76ff03", radius: 6, speed: 650, count: 1, spread: 0 },
+      { name: "Tuplapyssy", color: "#00e676", radius: 6, speed: 700, count: 2, spread: 0.15 },
+      { name: "Kolmoissarja", color: "#00e5ff", radius: 6, speed: 750, count: 3, spread: 0.25 },
+      { name: "Aavikkohaulikko", color: "#ffea00", radius: 5, speed: 800, count: 5, spread: 0.4 },
+      { name: "Megasiemen-Kanuuna", color: "#ff007f", radius: 14, speed: 900, count: 1, spread: 0 },
+      { name: "Kaktuksenmurskaaja 3000", color: "#ff9100", radius: 7, speed: 850, count: 7, spread: 0.55 }
+    ];
+    let currentWeaponIndex = 0;
+    let popupText = "";
+    let popupTimer = 0;
+
+    // --- CANVAS & ALUSTUS ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Pelin muuttujat
+    let isPlaying = false;
+    let isPaused = false;
+    let score = 0;
+    let lives = 3;
+    let highScore = localStorage.getItem('kasvipeli_topdown_highscore') || 0;
+
+    // Ohjauslippueet
+    let keys = { up: false, down: false, left: false, right: false };
+    let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+
+    let player = {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      radius: 22,
+      speed: 350,
+      angle: 0
+    };
+
+    let playerBullets = [];
+    let enemies = [];
+    let enemyBullets = [];
+    let particles = [];
+
+    let lastSpawnTime = 0;
+    let spawnInterval = 4500;
+    let maxEnemiesOnScreen = 5;
+    let shakeTime = 0;
+
+    const scoreEl = document.getElementById('score');
+    const highScoreEl = document.getElementById('highscore');
+    const livesEl = document.getElementById('lives-display');
+    const weaponNameEl = document.getElementById('weapon-name');
+    const startScreen = document.getElementById('start-screen');
+    const pauseScreen = document.getElementById('pause-screen');
+    const gameoverScreen = document.getElementById('gameover-screen');
+    const finalScoreEl = document.getElementById('final-score');
+    const damageFlash = document.getElementById('damage-flash');
+
+    highScoreEl.innerText = highScore;
+
+    // --- PAINIKKEIDEN KÄSITTELY (KORJATTU NÄPPÄINTUNNISTUS) ---
+    window.addEventListener('keydown', (e) => {
+      const k = e.key.toLowerCase();
+      
+      if (k === 'w' || k === 'arrowup' || e.code === 'KeyW' || e.code === 'ArrowUp') keys.up = true;
+      if (k === 's' || k === 'arrowdown' || e.code === 'KeyS' || e.code === 'ArrowDown') keys.down = true;
+      if (k === 'a' || k === 'arrowleft' || e.code === 'KeyA' || e.code === 'ArrowLeft') keys.left = true;
+      if (k === 'd' || k === 'arrowright' || e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = true;
+
+      if ((k === 'p' || e.code === 'KeyP') && isPlaying) {
+        togglePause();
+      }
+
+      // Estetään sivun heiluminen nuolilla pelatessa
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+        e.preventDefault();
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      const k = e.key.toLowerCase();
+
+      if (k === 'w' || k === 'arrowup' || e.code === 'KeyW' || e.code === 'ArrowUp') keys.up = false;
+      if (k === 's' || k === 'arrowdown' || e.code === 'KeyS' || e.code === 'ArrowDown') keys.down = false;
+      if (k === 'a' || k === 'arrowleft' || e.code === 'KeyA' || e.code === 'ArrowLeft') keys.left = false;
+      if (k === 'd' || k === 'arrowright' || e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = false;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+    });
+
+    window.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 || !isPlaying || isPaused) return;
+
+      playSound('shoot');
+      const w = weapons[currentWeaponIndex];
+
+      if (w.count === 1) {
+        const dirX = Math.cos(player.angle);
+        const dirY = Math.sin(player.angle);
+        playerBullets.push({
+          x: player.x + dirX * player.radius,
+          y: player.y + dirY * player.radius,
+          vx: dirX * w.speed,
+          vy: dirY * w.speed,
+          radius: w.radius,
+          color: w.color
+        });
+      } else {
+        const startAngle = player.angle - w.spread / 2;
+        const step = w.spread / (w.count - 1);
+        for (let i = 0; i < w.count; i++) {
+          const ang = startAngle + step * i;
+          const dirX = Math.cos(ang);
+          const dirY = Math.sin(ang);
+          playerBullets.push({
+            x: player.x + dirX * player.radius,
+            y: player.y + dirY * player.radius,
+            vx: dirX * w.speed,
+            vy: dirY * w.speed,
+            radius: w.radius,
+            color: w.color
+          });
+        }
+      }
+    });
+
+    function togglePause() {
+      isPaused = !isPaused;
+      if (isPaused) {
+        pauseScreen.classList.remove('hidden');
+      } else {
+        pauseScreen.classList.add('hidden');
+      }
+    }
+
+    function distance(x1, y1, x2, y2) {
+      return Math.hypot(x2 - x1, y2 - y1);
+    }
+
+    function spawnEnemy() {
+      let x, y;
+      if (Math.random() < 0.5) {
+        x = Math.random() < 0.5 ? -30 : canvas.width + 30;
+        y = Math.random() * canvas.height;
+      } else {
+        x = Math.random() * canvas.width;
+        y = Math.random() < 0.5 ? -30 : canvas.height + 30;
+      }
+
+      enemies.push({
+        x: x,
+        y: y,
+        radius: 20,
+        speed: 70 + Math.random() * 30,
+        angle: 0,
+        lastShootTime: Date.now() + Math.random() * 1500,
+        shootInterval: Math.max(1800, 3500 - score * 8)
+      });
+    }
+
+    function createExplosion(x, y, color = '#2e7d32') {
+      for (let i = 0; i < 16; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const spd = Math.random() * 180 + 40;
+        particles.push({
+          x: x,
+          y: y,
+          vx: Math.cos(ang) * spd,
+          vy: Math.sin(ang) * spd,
+          radius: Math.random() * 4 + 2,
+          color: color,
+          life: 0.5
+        });
+      }
+    }
+
+    // --- PELIN PÄÄSILMUKKA ---
+    let lastTime = performance.now();
+
+    function gameLoop(now) {
+      requestAnimationFrame(gameLoop);
+      const delta = Math.min((now - lastTime) / 1000, 0.1);
+      lastTime = now;
+
+      if (isPlaying && !isPaused) {
+        updateGame(delta);
+      }
+
+      renderGame();
+    }
+
+    function updateGame(delta) {
+      // 1. Pelaajan kulma hiirtä kohden
+      player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+
+      // 2. LIIKUMISLASKENTA (KORJATTU)
+      let moveX = 0;
+      let moveY = 0;
+      if (keys.up) moveY -= 1;
+      if (keys.down) moveY += 1;
+      if (keys.left) moveX -= 1;
+      if (keys.right) moveX += 1;
+
+      // Diagonaaliliikkeen tasoitus
+      if (moveX !== 0 && moveY !== 0) {
+        moveX *= 0.7071;
+        moveY *= 0.7071;
+      }
+
+      player.x += moveX * player.speed * delta;
+      player.y += moveY * player.speed * delta;
+
+      // Pysy ruudun sisällä
+      player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+      player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+
+      // 3. Viholliset
+      if (Date.now() - lastSpawnTime > spawnInterval && enemies.length < maxEnemiesOnScreen) {
+        spawnEnemy();
+        lastSpawnTime = Date.now();
+        spawnInterval = Math.max(1800, 4500 - score * 8);
+      }
+
+      enemies.forEach((enemy) => {
+        enemy.angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+        enemy.x += Math.cos(enemy.angle) * enemy.speed * delta;
+        enemy.y += Math.sin(enemy.angle) * enemy.speed * delta;
+
+        if (Date.now() - enemy.lastShootTime > enemy.shootInterval) {
+          enemy.lastShootTime = Date.now();
+          playSound('enemyShoot');
+
+          const dirX = Math.cos(enemy.angle);
+          const dirY = Math.sin(enemy.angle);
+
+          enemyBullets.push({
+            x: enemy.x + dirX * enemy.radius,
+            y: enemy.y + dirY * enemy.radius,
+            vx: dirX * 300,
+            vy: dirY * 300,
+            radius: 5
+          });
+        }
+      });
+
+      // 4. Pelaajan ammukset
+      for (let i = playerBullets.length - 1; i >= 0; i--) {
+        const b = playerBullets[i];
+        b.x += b.vx * delta;
+        b.y += b.vy * delta;
+
+        let hit = false;
+        for (let j = enemies.length - 1; j >= 0; j--) {
+          const e = enemies[j];
+          if (distance(b.x, b.y, e.x, e.y) < b.radius + e.radius) {
+            createExplosion(e.x, e.y, '#388E3C');
+            enemies.splice(j, 1);
+            hit = true;
+            playSound('hit');
+
+            score += 100;
+            scoreEl.innerText = score;
+
+            if (score > highScore) {
+              highScore = score;
+              highScoreEl.innerText = highScore;
+              localStorage.setItem('kasvipeli_topdown_highscore', highScore);
+            }
+
+            // Vaihda ase uuteen
+            currentWeaponIndex = (currentWeaponIndex + 1) % weapons.length;
+            const newWeapon = weapons[currentWeaponIndex];
+            weaponNameEl.innerText = newWeapon.name;
+            playSound('upgrade');
+
+            popupText = "UUSI ASE: " + newWeapon.name.toUpperCase() + "!";
+            popupTimer = 1.5;
+
+            break;
+          }
+        }
+
+        if (hit || b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+          playerBullets.splice(i, 1);
+        }
+      }
+
+      // 5. Vihollisten ammukset
+      for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const eb = enemyBullets[i];
+        eb.x += eb.vx * delta;
+        eb.y += eb.vy * delta;
+
+        if (distance(eb.x, eb.y, player.x, player.y) < eb.radius + player.radius) {
+          enemyBullets.splice(i, 1);
+          playerHurt();
+          continue;
+        }
+
+        if (eb.x < 0 || eb.x > canvas.width || eb.y < 0 || eb.y > canvas.height) {
+          enemyBullets.splice(i, 1);
+        }
+      }
+
+      // 6. Partikkelit & Ajastimet
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx * delta;
+        p.y += p.vy * delta;
+        p.life -= delta;
+
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+        }
+      }
+
+      if (shakeTime > 0) shakeTime -= delta;
+      if (popupTimer > 0) popupTimer -= delta;
+    }
+
+    // --- PIIRTO ---
+    function renderGame() {
+      ctx.save();
+
+      if (shakeTime > 0) {
+        ctx.translate((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
+      }
+
+      // Tausta
+      ctx.fillStyle = '#dcb168';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#c79c52';
+      for (let i = 0; i < canvas.width; i += 100) {
+        for (let j = 0; j < canvas.height; j += 100) {
+          ctx.beginPath();
+          ctx.arc(i + 30, j + 40, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      if (isPlaying) {
+        // Partikkelit
+        particles.forEach(p => {
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = Math.max(0, p.life * 2);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+
+        // Pelaajan ammukset
+        playerBullets.forEach(b => {
+          ctx.fillStyle = b.color;
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // Vihollisten ammukset
+        ctx.fillStyle = '#ff3d00';
+        enemyBullets.forEach(eb => {
+          ctx.beginPath();
+          ctx.arc(eb.x, eb.y, eb.radius, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // Kaktukset
+        enemies.forEach(e => {
+          ctx.save();
+          ctx.translate(e.x, e.y);
+          ctx.rotate(e.angle);
+
+          ctx.fillStyle = '#2e7d32';
+          ctx.beginPath();
+          ctx.arc(0, 0, e.radius, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#1b5e20';
+          ctx.beginPath();
+          ctx.arc(-4, -e.radius, 6, 0, Math.PI * 2);
+          ctx.arc(-4, e.radius, 6, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#ff0000';
+          ctx.beginPath();
+          ctx.arc(e.radius * 0.4, -6, 4, 0, Math.PI * 2);
+          ctx.arc(e.radius * 0.4, 6, 4, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.restore();
+        });
+
+        // Sankarikasvi
+        ctx.save();
+        ctx.translate(player.x, player.y);
+        ctx.rotate(player.angle);
+
+        ctx.fillStyle = '#2e7d32';
+        ctx.beginPath();
+        ctx.ellipse(-5, -player.radius, 8, 14, Math.PI / 4, 0, Math.PI * 2);
+        ctx.ellipse(-5, player.radius, 8, 14, -Math.PI / 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#4caf50';
+        ctx.beginPath();
+        ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(player.radius * 0.35, -7, 6, 0, Math.PI * 2);
+        ctx.arc(player.radius * 0.35, 7, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(player.radius * 0.5, -7, 3, 0, Math.PI * 2);
+        ctx.arc(player.radius * 0.5, 7, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+
+        // Uuden aseen saamis -ilmoitus
+        if (popupTimer > 0) {
+          ctx.save();
+          ctx.fillStyle = '#39ff14';
+          ctx.font = 'bold 28px Segoe UI, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.shadowColor = '#000';
+          ctx.shadowBlur = 8;
+          ctx.globalAlpha = Math.min(1, popupTimer);
+          ctx.fillText(popupText, canvas.width / 2, canvas.height / 2 - 70);
+          ctx.restore();
+        }
+      }
+
+      ctx.restore();
+    }
+
+    // --- VAHINKO & GAME OVER ---
+    function playerHurt() {
+      lives--;
+      playSound('hurt');
+      shakeTime = 0.3;
+
+      damageFlash.style.opacity = '1';
+      setTimeout(() => damageFlash.style.opacity = '0', 150);
+
+      let hearts = '';
+      for (let i = 0; i < lives; i++) hearts += '❤️ ';
+      livesEl.innerText = 'Elämät: ' + (hearts || '💀');
+
+      if (lives <= 0) {
+        gameOver();
+      }
+    }
+
+    function startGame() {
+      initAudio();
+
+      // Nollataan liikenäppäimet pelin alussa
+      keys = { up: false, down: false, left: false, right: false };
+
+      enemies = [];
+      playerBullets = [];
+      enemyBullets = [];
+      particles = [];
+
+      score = 0;
+      lives = 3;
+      spawnInterval = 4500;
+      currentWeaponIndex = 0;
+      weaponNameEl.innerText = weapons[0].name;
+
+      scoreEl.innerText = '0';
+      livesEl.innerText = 'Elämät: ❤️ ❤️ ❤️';
+
+      player.x = canvas.width / 2;
+      player.y = canvas.height / 2;
+
+      startScreen.classList.add('hidden');
+      gameoverScreen.classList.add('hidden');
+      pauseScreen.classList.add('hidden');
+
+      isPlaying = true;
+      isPaused = false;
+      window.focus();
+    }
+
+    function gameOver() {
+      isPlaying = false;
+      finalScoreEl.innerText = score;
+      gameoverScreen.classList.remove('hidden');
+    }
+
+    document.getElementById('start-btn').addEventListener('click', startGame);
+    document.getElementById('restart-btn').addEventListener('click', startGame);
+
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>
