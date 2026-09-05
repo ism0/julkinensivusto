@@ -191,6 +191,10 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
+// Logical game size (keeps game coordinates consistent across devices)
+const LOGICAL_W = 800;
+const LOGICAL_H = 500;
+
 const startScreen = document.getElementById('start-screen');
 const levelScreen = document.getElementById('level-screen');
 const gameoverScreen = document.getElementById('gameover-screen');
@@ -368,13 +372,16 @@ let cityBuildings = [];
 
 function resizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
-    const w = Math.max(320, window.innerWidth);
-    const h = Math.max(320, window.innerHeight);
-    canvas.style.width = w + 'px';
-    canvas.style.height = h + 'px';
-    canvas.width = Math.floor(w * dpr);
-    canvas.height = Math.floor(h * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Fit logical game area into viewport while preserving aspect ratio
+    const scale = Math.min(window.innerWidth / LOGICAL_W, window.innerHeight / LOGICAL_H);
+    const cssW = Math.floor(LOGICAL_W * scale);
+    const cssH = Math.floor(LOGICAL_H * scale);
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    canvas.width = Math.floor(LOGICAL_W * dpr * scale);
+    canvas.height = Math.floor(LOGICAL_H * dpr * scale);
+    // Transform so all drawing can use logical coordinates (0..LOGICAL_W, 0..LOGICAL_H)
+    ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
     initStars();
     initBuildings();
 }
@@ -383,8 +390,8 @@ function initStars(){
     stars.length = 0;
     for (let i = 0; i < 70; i++) {
         stars.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() * (canvas.height * 0.7),
+            x: Math.random() * LOGICAL_W,
+            y: Math.random() * (LOGICAL_H * 0.7),
             size: Math.random() * 2 + 1,
             speed: Math.random() * 0.2 + 0.05,
             color: ['#ffffff', '#e0f7fa', '#ffe082', '#ea80fc'][Math.floor(Math.random() * 4)]
@@ -394,7 +401,7 @@ function initStars(){
 
 function initBuildings() {
     cityBuildings.length = 0;
-    for (let x = 0; x < canvas.width; x += 40) {
+    for (let x = 0; x < LOGICAL_W; x += 40) {
         const h = 80 + Math.random() * 120;
         cityBuildings.push({ x, w: 42, h });
     }
@@ -479,45 +486,29 @@ canvas.addEventListener('mousedown', () => {
     if (gameState === 'PLAYING') player.shoot();
 });
 
-// Taustakuvat
-const stars = [];
-for (let i = 0; i < 70; i++) {
-    stars.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * (canvas.height * 0.7),
-        size: Math.random() * 2 + 1,
-        speed: Math.random() * 0.2 + 0.05,
-        color: ['#ffffff', '#e0f7fa', '#ffe082', '#ea80fc'][Math.floor(Math.random() * 4)]
-    });
-}
-
-const cityBuildings = [];
-for (let x = 0; x < canvas.width; x += 40) {
-    const h = 80 + Math.random() * 120;
-    cityBuildings.push({ x, w: 42, h });
-}
+/* stars & buildings are initialized in initStars() and initBuildings() */
 
 function updateAndDrawBackground() {
-    let grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    let grad = ctx.createLinearGradient(0, 0, 0, LOGICAL_H);
     grad.addColorStop(0, '#090514');
     grad.addColorStop(0.6, '#180e29');
     grad.addColorStop(1, '#2c163b');
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
 
     stars.forEach(s => {
         s.x -= s.speed;
-        if (s.x < 0) s.x = canvas.width;
+        if (s.x < 0) s.x = LOGICAL_W;
         ctx.fillStyle = s.color;
         ctx.fillRect(Math.floor(s.x), Math.floor(s.y), s.size, s.size);
     });
 
     ctx.fillStyle = '#110a1f';
     cityBuildings.forEach(b => {
-        ctx.fillRect(b.x, canvas.height - b.h, b.w, b.h);
+        ctx.fillRect(b.x, LOGICAL_H - b.h, b.w, b.h);
         ctx.fillStyle = '#ffd54f';
         for (let ix = b.x + 6; ix < b.x + b.w - 8; ix += 12) {
-            for (let iy = canvas.height - b.h + 10; iy < canvas.height - 20; iy += 18) {
+            for (let iy = LOGICAL_H - b.h + 10; iy < LOGICAL_H - 20; iy += 18) {
                 if ((ix + iy) % 3 === 0) {
                     ctx.fillRect(ix, iy, 5, 8);
                 }
@@ -662,9 +653,9 @@ class Player {
         this.y += this.vy;
 
         if (this.x < 0) this.x = 0;
-        if (this.x + this.width > canvas.width) this.x = canvas.width - this.width;
+        if (this.x + this.width > LOGICAL_W) this.x = LOGICAL_W - this.width;
 
-        if (this.y > canvas.height + 50) {
+        if (this.y > LOGICAL_H + 50) {
             this.hp--;
             if (this.hp > 0) {
                 this.x = 50;
@@ -717,7 +708,7 @@ class Projectile {
 
     update() {
         this.x += this.speed;
-        if (this.x < -20 || this.x > canvas.width + 20) this.alive = false;
+        if (this.x < -20 || this.x > LOGICAL_W + 20) this.alive = false;
 
         this.sparkles.push({
             x: this.x + (Math.random() * 6 - 3),
