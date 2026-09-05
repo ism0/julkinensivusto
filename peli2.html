@@ -114,13 +114,17 @@
       z-index: 15;
     }
 
-    /* Touch controls */
-    #touch-controls { position: absolute; bottom: 18px; left: 16px; right: 16px; display:flex; justify-content:space-between; z-index:25; pointer-events:none; }
-    #touch-controls .group { pointer-events:auto; display:flex; gap:10px; }
-    .tc-btn { width:56px; height:56px; border-radius:50%; background: rgba(255,255,255,0.08); border:2px solid rgba(255,255,255,0.12); color:#fff; font-size:18px; display:flex; align-items:center; justify-content:center; }
+    /* Make body the positioning root for overlays */
+    body { position: relative; }
 
-    @media (min-width:801px) { #touch-controls { display:none !important; } }
-    @media (max-width:800px) { canvas { width:100vw; height:100vh; } }
+    /* Joystick + actions for touch */
+    .joystick { position: absolute; bottom: 18px; left: 18px; width: 20vmin; height:20vmin; max-width:140px; max-height:140px; z-index:26; touch-action:none; }
+    .joystick .joy-base { position:absolute; inset:0; background: rgba(255,255,255,0.04); border-radius:50%; border:2px solid rgba(255,255,255,0.08); }
+    .joystick .joy-knob { position:absolute; left:50%; top:50%; width:44%; height:44%; background:rgba(255,255,255,0.16); border-radius:50%; transform:translate(-50%,-50%); transition: transform 0.04s linear; }
+    .right-actions { position:absolute; bottom:18px; right:18px; display:flex; gap:12px; z-index:26; }
+    .right-actions .tc-btn { width:18vmin; height:18vmin; max-width:120px; max-height:120px; border-radius:50%; background: rgba(255,255,255,0.08); border:2px solid rgba(255,255,255,0.12); color:#fff; display:flex; align-items:center; justify-content:center; touch-action:none; }
+
+    @media (min-width:801px) { .joystick, .right-actions { display:none !important; } }
   </style>
 </head>
 <body>
@@ -248,78 +252,69 @@
       const scale = Math.min(window.innerWidth / LOGICAL_W, window.innerHeight / LOGICAL_H);
       const cssW = Math.floor(LOGICAL_W * scale);
       const cssH = Math.floor(LOGICAL_H * scale);
+      // center the canvas in the viewport
+      const left = Math.round((window.innerWidth - cssW) / 2);
+      const top = Math.round((window.innerHeight - cssH) / 2);
+      canvas.style.position = 'absolute';
+      canvas.style.left = left + 'px';
+      canvas.style.top = top + 'px';
       canvas.style.width = cssW + 'px';
       canvas.style.height = cssH + 'px';
       canvas.width = Math.floor(LOGICAL_W * dpr * scale);
       canvas.height = Math.floor(LOGICAL_H * dpr * scale);
       ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+
+      // align overlays to the canvas area so UI does not break in landscape
+      const overlayIds = ['start-screen','pause-screen','gameover-screen','hud','damage-flash','gameover-screen'];
+      overlayIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.style.position = 'absolute';
+        el.style.left = left + 'px';
+        el.style.top = top + 'px';
+        el.style.width = cssW + 'px';
+        el.style.height = cssH + 'px';
+      });
+
+      // position touch UI relative to canvas area
+      const jl = document.querySelector('.joystick');
+      const ra = document.querySelector('.right-actions');
+      if (jl) { jl.style.left = (left + 18) + 'px'; jl.style.bottom = (window.innerHeight - (top + cssH) + 18) + 'px'; }
+      if (ra) { ra.style.right = (18 + (window.innerWidth - (left + cssW))) + 'px'; ra.style.bottom = (window.innerHeight - (top + cssH) + 18) + 'px'; }
     }
     window.addEventListener('resize', () => { resizeCanvas(); });
     resizeCanvas();
 
-    // Touch handling: aim with touch, tap to shoot, and simple on-screen buttons
-    (function setupTouch(){
+    // Touch joystick + actions
+    (function setupJoystick(){
       try {
-        const container = document.body;
-        const tc = document.createElement('div');
-        tc.id = 'touch-controls';
-        tc.innerHTML = `
-          <div class="group left">
-            <button id="btn-up" class="tc-btn">▲</button>
-            <button id="btn-left" class="tc-btn">◀</button>
-            <button id="btn-right" class="tc-btn">▶</button>
-          </div>
-          <div class="group right">
-            <button id="btn-shoot" class="tc-btn">●</button>
-          </div>
-        `;
-        document.body.appendChild(tc);
+        if (document.querySelector('.joystick')) return;
+        // create joystick
+        const jl = document.createElement('div'); jl.className = 'joystick'; jl.innerHTML = '<div class="joy-base"></div><div class="joy-knob"></div>';
+        const ra = document.createElement('div'); ra.className = 'right-actions'; ra.innerHTML = '<button id="tc-shoot" class="tc-btn">●</button>';
+        document.body.appendChild(jl); document.body.appendChild(ra);
 
-        const btnUp = document.getElementById('btn-up');
-        const btnLeft = document.getElementById('btn-left');
-        const btnRight = document.getElementById('btn-right');
-        const btnShoot = document.getElementById('btn-shoot');
-
-        function prevent(e){ e.preventDefault(); }
-        [btnUp, btnLeft, btnRight, btnShoot].forEach(b => { if (!b) return; b.addEventListener('touchstart', prevent, {passive:false}); b.addEventListener('touchmove', prevent, {passive:false}); });
-
-        btnUp && btnUp.addEventListener('touchstart', ()=>{ keys.up = true; });
-        btnUp && btnUp.addEventListener('touchend', ()=>{ keys.up = false; });
-        btnLeft && btnLeft.addEventListener('touchstart', ()=>{ keys.left = true; });
-        btnLeft && btnLeft.addEventListener('touchend', ()=>{ keys.left = false; });
-        btnRight && btnRight.addEventListener('touchstart', ()=>{ keys.right = true; });
-        btnRight && btnRight.addEventListener('touchend', ()=>{ keys.right = false; });
-        btnShoot && btnShoot.addEventListener('touchstart', (e)=>{ e.preventDefault(); playSound('shoot'); spawnPlayerBulletsAtTouch(e); }, {passive:false});
-
-        // tap to aim & shoot
-        canvas.addEventListener('touchstart', (e)=>{
-          e.preventDefault();
-          const t = e.touches[0];
-          mouse.x = t.clientX;
-          mouse.y = t.clientY;
-          playSound('shoot');
-          spawnPlayerBulletsAtTouch({ touches: [t] });
-        }, {passive:false});
-        canvas.addEventListener('touchmove', (e)=>{ e.preventDefault(); const t = e.touches[0]; mouse.x = t.clientX; mouse.y = t.clientY; }, {passive:false});
-
-        function spawnPlayerBulletsAtTouch(e){
-          if (!isPlaying || isPaused) return;
-          const t = e.touches[0];
-          if (!t) return;
-          const w = weapons[currentWeaponIndex];
-          const ang = Math.atan2(t.clientY - player.y, t.clientX - player.x);
-          if (w.count === 1) {
-            playerBullets.push({ x: player.x + Math.cos(ang) * player.radius, y: player.y + Math.sin(ang) * player.radius, vx: Math.cos(ang) * w.speed, vy: Math.sin(ang) * w.speed, radius: w.radius, color: w.color });
-          } else {
-            const startAngle = ang - w.spread / 2;
-            const step = w.spread / (w.count - 1);
-            for (let i = 0; i < w.count; i++) {
-              const a = startAngle + step * i;
-              playerBullets.push({ x: player.x + Math.cos(a) * player.radius, y: player.y + Math.sin(a) * player.radius, vx: Math.cos(a) * w.speed, vy: Math.sin(a) * w.speed, radius: w.radius, color: w.color });
-            }
-          }
+        const base = jl.querySelector('.joy-base'); const knob = jl.querySelector('.joy-knob');
+        let active = null; let baseRect = null;
+        function start(e){ e.preventDefault(); if (active !== null) return; active = e.pointerId; baseRect = base.getBoundingClientRect(); base.setPointerCapture(active); onMove(e); }
+        function onMove(e){ if (active !== e.pointerId) return; const cx = baseRect.left + baseRect.width/2; const cy = baseRect.top + baseRect.height/2; const dx = e.clientX - cx; const dy = e.clientY - cy; const r=Math.hypot(dx,dy); const maxR = Math.min(baseRect.width, baseRect.height)*0.45; const clamped = Math.min(r,maxR); const nx = (r===0)?0:dx/r; const ny = (r===0)?0:dy/r; knob.style.transform = `translate(${nx*clamped}px, ${ny*clamped}px)`;
+          // map to keys for 8-way movement
+          const xNorm = dx / maxR; const yNorm = dy / maxR;
+          keys.left = xNorm < -0.25; keys.right = xNorm > 0.25; keys.up = yNorm < -0.25; keys.down = yNorm > 0.25;
         }
-      } catch(e) { }
+        function end(e){ if (active !== e.pointerId) return; try{ base.releasePointerCapture(active);}catch(_){} active=null; knob.style.transform='translate(-50%,-50%)'; keys.left=false; keys.right=false; keys.up=false; keys.down=false; }
+        base.addEventListener('pointerdown', start, {passive:false}); base.addEventListener('pointermove', onMove, {passive:false}); base.addEventListener('pointerup', end); base.addEventListener('pointercancel', end);
+
+        // shoot button
+        const sb = document.getElementById('tc-shoot'); if (sb) { sb.addEventListener('pointerdown', (e)=>{ e.preventDefault(); playSound('shoot'); spawnPlayerBulletsAtTouch({ touches: [{ clientX: player.x, clientY: player.y }] }); }); }
+
+        // tap to aim & shoot as before (but coordinates are logical, translate client to canvas logical coords)
+        canvas.addEventListener('touchstart', (e)=>{
+          e.preventDefault(); const t = e.touches[0]; if (!t) return; // map client to logical
+          const rect = canvas.getBoundingClientRect(); const scaleX = LOGICAL_W / rect.width; const scaleY = LOGICAL_H / rect.height; const lx = (t.clientX - rect.left) * scaleX; const ly = (t.clientY - rect.top) * scaleY; mouse.x = lx; mouse.y = ly; playSound('shoot'); spawnPlayerBulletsAtTouch({ touches: [{ clientX: lx, clientY: ly }] });
+        }, {passive:false});
+
+      } catch(e) {}
     })();
 
     // Pelin muuttujat
