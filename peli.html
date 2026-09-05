@@ -111,42 +111,17 @@
             box-shadow: 0 6px 20px rgba(255, 64, 129, 0.6);
         }
 
-        /* Touch controls */
-        #touch-controls {
-            position: absolute;
-            bottom: 18px;
-            left: 16px;
-            right: 16px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            pointer-events: none;
-            z-index: 25;
-        }
-        #touch-controls .group { pointer-events: auto; display:flex; gap:10px; }
-        .tc-btn {
-            width: 64px;
-            height: 64px;
-            border-radius: 50%;
-            background: rgba(255,255,255,0.08);
-            border: 2px solid rgba(255,255,255,0.12);
-            color: #fff;
-            font-size: 20px;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            backdrop-filter: blur(4px);
-            user-select: none;
-        }
-
+        /* Virtual joystick and action buttons for touch devices */
+        .joystick { position: absolute; bottom: 18px; left: 18px; width: 22vmin; height: 22vmin; max-width:140px; max-height:140px; z-index:26; touch-action:none; }
+        .joystick .joy-base { position:absolute; inset:0; background: rgba(255,255,255,0.04); border-radius:50%; border:2px solid rgba(255,255,255,0.08); display:flex; align-items:center; justify-content:center; }
+        .joystick .joy-knob { position:absolute; left:50%; top:50%; width:44%; height:44%; background:rgba(255,255,255,0.16); border-radius:50%; transform:translate(-50%,-50%); transition: transform 0.04s linear; }
+        .right-actions { position:absolute; bottom:18px; right:18px; display:flex; gap:12px; align-items:center; z-index:26; }
+        .right-actions .tc-btn { width: 18vmin; height:18vmin; max-width:120px; max-height:120px; border-radius:50%; background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.12); color:#fff; font-size:20px; display:flex; align-items:center; justify-content:center; touch-action:none; }
         @media (min-width: 801px) {
-            #touch-controls { display: none !important; }
+            .joystick, .right-actions { display: none !important; }
         }
 
         @media (max-width: 800px) {
-            #game-container { width: 100vw; height: 100vh; }
-            canvas { width: 100vw; height: 100vh; }
             .overlay { font-size: 1.05rem; }
         }
     </style>
@@ -384,6 +359,13 @@ function resizeCanvas() {
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
     initStars();
     initBuildings();
+
+    // Ensure game-container matches canvas size so overlays align (fix landscape issues)
+    const container = document.getElementById('game-container');
+    if (container) {
+        container.style.width = cssW + 'px';
+        container.style.height = cssH + 'px';
+    }
 }
 
 function initStars(){
@@ -412,55 +394,94 @@ resizeCanvas();
 
 const keys = { a: false, d: false, w: false, space: false, shoot: false };
 
-// Create simple touch controls for mobile (left/right/jump/shoot)
-(function createTouchControls(){
+// Create a virtual joystick (left) and action buttons (right) for touch devices
+(function createJoystickControls(){
     try {
         const container = document.getElementById('game-container');
         if (!container) return;
-        if (document.getElementById('touch-controls')) return;
-        const tc = document.createElement('div');
-        tc.id = 'touch-controls';
-        tc.innerHTML = `
-            <div class="group left">
-                <button id="btn-left" class="tc-btn">◀</button>
-                <button id="btn-right" class="tc-btn">▶</button>
-                <button id="btn-jump" class="tc-btn">▲</button>
-            </div>
-            <div class="group right">
-                <button id="btn-shoot" class="tc-btn">●</button>
-            </div>
-        `;
-        container.appendChild(tc);
+        if (document.getElementById('joystick-left')) return;
 
-        const map = {
-            'btn-left': ['a', true],
-            'btn-right': ['d', true],
-            'btn-jump': ['w', true],
-            'btn-shoot': ['shoot', true]
-        };
+        // joystick markup
+        const jl = document.createElement('div');
+        jl.id = 'joystick-left';
+        jl.className = 'joystick';
+        jl.innerHTML = '<div class="joy-base"></div><div class="joy-knob"></div>';
 
-        Object.keys(map).forEach(id => {
-            const el = document.getElementById(id);
-            if (!el) return;
-            const keyName = map[id][0];
-            el.addEventListener('touchstart', (ev) => { ev.preventDefault(); if (keyName === 'shoot') { if (!keys.shoot && gameState === 'PLAYING') player.shoot(); keys.shoot = true; } else { keys[keyName] = true; } }, { passive: false });
-            el.addEventListener('touchend', (ev) => { ev.preventDefault(); if (keyName === 'shoot') { keys.shoot = false; } else { keys[keyName] = false; } }, { passive: false });
-            // mouse support for big buttons on desktop
-            el.addEventListener('mousedown', (ev)=>{ ev.preventDefault(); if (keyName === 'shoot') { if (!keys.shoot && gameState === 'PLAYING') player.shoot(); keys.shoot = true; } else { keys[keyName] = true; } });
-            el.addEventListener('mouseup', ()=>{ if (keyName === 'shoot') keys.shoot = false; else keys[keyName] = false; });
-        });
+        const actions = document.createElement('div');
+        actions.id = 'action-buttons';
+        actions.className = 'right-actions';
+        actions.innerHTML = '<button id="tc-jump" class="tc-btn">▲</button><button id="tc-shoot" class="tc-btn">●</button>';
 
-        // prevent scrolling when interacting with game area
+        container.appendChild(jl);
+        container.appendChild(actions);
+
+        const base = jl.querySelector('.joy-base');
+        const knob = jl.querySelector('.joy-knob');
+
+        let activePointer = null;
+        let baseRect = null;
+        const maxKnobDist = () => (baseRect ? Math.min(baseRect.width, baseRect.height) * 0.45 : 40);
+
+        function start(e) {
+            e.preventDefault();
+            if (activePointer !== null) return;
+            activePointer = e.pointerId;
+            baseRect = base.getBoundingClientRect();
+            base.setPointerCapture(activePointer);
+            onMove(e);
+        }
+        function onMove(e) {
+            if (activePointer !== e.pointerId) return;
+            const cx = baseRect.left + baseRect.width / 2;
+            const cy = baseRect.top + baseRect.height / 2;
+            const dx = e.clientX - cx;
+            const dy = e.clientY - cy;
+            const r = Math.hypot(dx, dy);
+            const maxR = maxKnobDist();
+            const clampedR = Math.min(r, maxR);
+            const nx = (r === 0) ? 0 : dx / r;
+            const ny = (r === 0) ? 0 : dy / r;
+            knob.style.transform = `translate(${nx * clampedR}px, ${ny * clampedR}px)`;
+
+            // Map joystick x-axis to left/right
+            const xNorm = dx / maxR;
+            keys.a = xNorm < -0.35;
+            keys.d = xNorm > 0.35;
+
+            // Upwards quick push triggers jump (one-shot)
+            const yNorm = dy / maxR;
+            if (yNorm < -0.6 && gameState === 'PLAYING') {
+                // trigger brief jump press
+                keys.w = true;
+                setTimeout(()=>{ keys.w = false; }, 150);
+            }
+        }
+        function end(e) {
+            if (activePointer !== e.pointerId) return;
+            try { base.releasePointerCapture(activePointer); } catch(_) {}
+            activePointer = null;
+            knob.style.transform = 'translate(-50%,-50%)';
+            keys.a = false; keys.d = false; keys.w = false;
+        }
+
+        base.addEventListener('pointerdown', start, { passive: false });
+        base.addEventListener('pointermove', onMove, { passive: false });
+        base.addEventListener('pointerup', end);
+        base.addEventListener('pointercancel', end);
+
+        // Action buttons
+        const jb = document.getElementById('tc-jump');
+        const sb = document.getElementById('tc-shoot');
+        jb.addEventListener('pointerdown', (e)=>{ e.preventDefault(); keys.w = true; });
+        jb.addEventListener('pointerup', (e)=>{ keys.w = false; });
+        sb.addEventListener('pointerdown', (e)=>{ e.preventDefault(); if (gameState === 'PLAYING') player.shoot(); });
+
+        // Prevent page scroll when interacting with game container
         document.body.addEventListener('touchmove', (ev) => {
             if (ev.target.closest && ev.target.closest('#game-container')) ev.preventDefault();
         }, { passive: false });
 
-        // canvas touch: tap to shoot
-        canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            if (gameState === 'PLAYING') player.shoot();
-        }, { passive: false });
-    } catch(e) { /* ignore on older browsers */ }
+    } catch(e) { /* ignore for older browsers */ }
 })();
 
 window.addEventListener('keydown', (e) => {
