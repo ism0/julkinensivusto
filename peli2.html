@@ -2,7 +2,7 @@
 <html lang="fi">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Kasvipeli - Aavikon Taistelu</title>
   <style>
     * {
@@ -18,12 +18,28 @@
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       background-color: #dcb168;
       color: #fff;
+      touch-action: none;
+      overscroll-behavior: none;
     }
 
     #gameCanvas {
       display: block;
       background: #dcb168;
       cursor: crosshair;
+      touch-action: none;
+    }
+
+    #pause-btn {
+      pointer-events: auto;
+      background: rgba(0,0,0,0.65);
+      border: 2px solid #8b5a2b;
+      color: #fff;
+      font-size: 20px;
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      cursor: pointer;
+      flex-shrink: 0;
     }
 
     /* HUD (Pistetaulu, Ase & Elämät) */
@@ -113,21 +129,6 @@
       transition: opacity 0.1s ease-out;
       z-index: 15;
     }
-
-    /* Make body the positioning root for overlays */
-    body { position: relative; }
-
-    /* Joystick + actions for touch */
-    .joystick { position: absolute; bottom: 18px; left: 18px; width: 20vmin; height:20vmin; max-width:140px; max-height:140px; z-index:26; touch-action:none; }
-    .joystick .joy-base { position:absolute; inset:0; background: rgba(255,255,255,0.04); border-radius:50%; border:2px solid rgba(255,255,255,0.08); }
-    .joystick .joy-knob { position:absolute; left:50%; top:50%; width:44%; height:44%; background:rgba(255,255,255,0.16); border-radius:50%; transform:translate(-50%,-50%); transition: transform 0.04s linear; }
-    .right-actions { position:absolute; bottom:18px; right:18px; display:flex; gap:12px; z-index:26; }
-    .right-actions .tc-btn { width:18vmin; height:18vmin; max-width:120px; max-height:120px; border-radius:50%; background: rgba(255,255,255,0.08); border:2px solid rgba(255,255,255,0.12); color:#fff; display:flex; align-items:center; justify-content:center; touch-action:none; }
-
-    @media (min-width:801px) { .joystick, .right-actions { display:none !important; } }
-
-    /* Ensure touch devices always show touch controls regardless of screen width */
-    @media (pointer: coarse) { .joystick, .right-actions { display:block !important; } }
   </style>
 </head>
 <body>
@@ -140,18 +141,24 @@
       Pisteet: <span id="score">0</span> | Paras: <span id="highscore">0</span>
       <div class="weapon-text">Ase: <span id="weapon-name">Perussiemen</span></div>
     </div>
-    <div class="hud-box" id="lives-display">Elämät: ❤️ ❤️ ❤️</div>
+    <div style="display:flex; align-items:center; gap:10px; pointer-events:auto;">
+      <div class="hud-box" id="lives-display">Elämät: ❤️ ❤️ ❤️</div>
+      <button id="pause-btn" aria-label="Tauko">⏸</button>
+    </div>
   </div>
 
   <!-- Aloitusnäyttö -->
   <div id="start-screen" class="overlay">
     <h1>KASVIPELI</h1>
     <p>Olet sankarikasvi aavikolla! Tuhoa pahiskaktukset ja saat <b>joka taposta uuden aseen</b>!<br><br>
-    <b>Ohjaus:</b><br>
+    <b>Ohjaus (näppäimistö):</b><br>
     • Liiku: <b>WASD</b> tai <b>Nuolinäppäimet</b><br>
     • Tähtää: <b>Hiiri</b><br>
     • Ammu: <b>Hiiren vasen painike</b><br>
-    • Tauko: <b>P</b>
+    • Tauko: <b>P</b><br><br>
+    <b>Ohjaus (kosketusnäyttö):</b><br>
+    • Liiku: vedä sormella ruudun <b>vasemmalta puolelta</b><br>
+    • Tähtää & ammu: pidä sormea ruudun <b>oikealla puolella</b>
     </p>
     <button class="btn" id="start-btn">ALOITA PELI</button>
   </div>
@@ -159,7 +166,8 @@
   <!-- Taukovalikko -->
   <div id="pause-screen" class="overlay hidden">
     <h1>PELI PYSÄYTETTY</h1>
-    <p>Paina <b>P</b> jatkaaksesi peliä.</p>
+    <p>Paina <b>P</b> tai kosketa painiketta jatkaaksesi peliä.</p>
+    <button class="btn" id="resume-btn">JATKA PELIÄ</button>
   </div>
 
   <!-- Game Over -näyttö -->
@@ -234,9 +242,15 @@
       { name: "Perussiemen", color: "#76ff03", radius: 6, speed: 650, count: 1, spread: 0 },
       { name: "Tuplapyssy", color: "#00e676", radius: 6, speed: 700, count: 2, spread: 0.15 },
       { name: "Kolmoissarja", color: "#00e5ff", radius: 6, speed: 750, count: 3, spread: 0.25 },
+      { name: "Piikkiluoti", color: "#e0e0e0", radius: 4, speed: 1100, count: 1, spread: 0 },
       { name: "Aavikkohaulikko", color: "#ffea00", radius: 5, speed: 800, count: 5, spread: 0.4 },
+      { name: "Nelossuihku", color: "#7c4dff", radius: 6, speed: 780, count: 4, spread: 0.5 },
       { name: "Megasiemen-Kanuuna", color: "#ff007f", radius: 14, speed: 900, count: 1, spread: 0 },
-      { name: "Kaktuksenmurskaaja 3000", color: "#ff9100", radius: 7, speed: 850, count: 7, spread: 0.55 }
+      { name: "Timanttisade", color: "#18ffff", radius: 4, speed: 950, count: 4, spread: 0.2 },
+      { name: "Kaktuksenmurskaaja 3000", color: "#ff9100", radius: 7, speed: 850, count: 7, spread: 0.55 },
+      { name: "Kaksoishaulikko", color: "#ffd600", radius: 5, speed: 820, count: 6, spread: 0.7 },
+      { name: "Jättisiemen", color: "#8d6e63", radius: 20, speed: 500, count: 1, spread: 0 },
+      { name: "Ympyräpamaus", color: "#ff1744", radius: 6, speed: 600, count: 10, spread: Math.PI * 2 * 9 / 10 }
     ];
     let currentWeaponIndex = 0;
     let popupText = "";
@@ -246,81 +260,12 @@
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
 
-    // Logical game size for consistent coordinates across devices
-    const LOGICAL_W = 900;
-    const LOGICAL_H = 600;
-
     function resizeCanvas() {
-      const dpr = window.devicePixelRatio || 1;
-      const scale = Math.min(window.innerWidth / LOGICAL_W, window.innerHeight / LOGICAL_H);
-      const cssW = Math.floor(LOGICAL_W * scale);
-      const cssH = Math.floor(LOGICAL_H * scale);
-      // center the canvas in the viewport
-      const left = Math.round((window.innerWidth - cssW) / 2);
-      const top = Math.round((window.innerHeight - cssH) / 2);
-      canvas.style.position = 'absolute';
-      canvas.style.left = left + 'px';
-      canvas.style.top = top + 'px';
-      canvas.style.width = cssW + 'px';
-      canvas.style.height = cssH + 'px';
-      canvas.width = Math.floor(LOGICAL_W * dpr * scale);
-      canvas.height = Math.floor(LOGICAL_H * dpr * scale);
-      ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
-
-      // align overlays to the canvas area so UI does not break in landscape
-      const overlayIds = ['start-screen','pause-screen','gameover-screen','hud','damage-flash','gameover-screen'];
-      overlayIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.style.position = 'absolute';
-        el.style.left = left + 'px';
-        el.style.top = top + 'px';
-        el.style.width = cssW + 'px';
-        el.style.height = cssH + 'px';
-      });
-
-      // position touch UI relative to canvas area
-      const jl = document.querySelector('.joystick');
-      const ra = document.querySelector('.right-actions');
-      if (jl) { jl.style.left = (left + 18) + 'px'; jl.style.bottom = (window.innerHeight - (top + cssH) + 18) + 'px'; }
-      if (ra) { ra.style.right = (18 + (window.innerWidth - (left + cssW))) + 'px'; ra.style.bottom = (window.innerHeight - (top + cssH) + 18) + 'px'; }
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
     }
-    window.addEventListener('resize', () => { resizeCanvas(); });
+    window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
-
-    // Touch joystick + actions
-    (function setupJoystick(){
-      try {
-        if (document.querySelector('.joystick')) return;
-        // create joystick
-        const jl = document.createElement('div'); jl.className = 'joystick'; jl.innerHTML = '<div class="joy-base"></div><div class="joy-knob"></div>';
-        const ra = document.createElement('div'); ra.className = 'right-actions'; ra.innerHTML = '<button id="tc-shoot" class="tc-btn">●</button>';
-        const container = document.getElementById('game-container') || document.body; container.appendChild(jl); container.appendChild(ra);
-
-        const base = jl.querySelector('.joy-base'); const knob = jl.querySelector('.joy-knob');
-        let active = null; let baseRect = null;
-        function start(e){ e.preventDefault(); if (active !== null) return; active = e.pointerId; baseRect = base.getBoundingClientRect(); base.setPointerCapture(active); onMove(e); }
-        function onMove(e){ if (active !== e.pointerId) return; const cx = baseRect.left + baseRect.width/2; const cy = baseRect.top + baseRect.height/2; const dx = e.clientX - cx; const dy = e.clientY - cy; const r=Math.hypot(dx,dy); const maxR = Math.min(baseRect.width, baseRect.height)*0.45; const clamped = Math.min(r,maxR); const nx = (r===0)?0:dx/r; const ny = (r===0)?0:dy/r; knob.style.transform = `translate(${nx*clamped}px, ${ny*clamped}px)`;
-          // map to keys for 8-way movement
-          const xNorm = dx / maxR; const yNorm = dy / maxR;
-          keys.left = xNorm < -0.25; keys.right = xNorm > 0.25; keys.up = yNorm < -0.25; keys.down = yNorm > 0.25;
-        }
-        function end(e){ if (active !== e.pointerId) return; try{ base.releasePointerCapture(active);}catch(_){} active=null; knob.style.transform='translate(-50%,-50%)'; keys.left=false; keys.right=false; keys.up=false; keys.down=false; }
-        base.addEventListener('pointerdown', start, {passive:false}); base.addEventListener('pointermove', (e)=>{ if (e.buttons || e.pointerType) onMove(e); }, {passive:false}); base.addEventListener('pointerup', end); base.addEventListener('pointercancel', end);
-        // touch fallback
-        base.addEventListener('touchstart', (e)=>{ e.preventDefault(); start(e); }, {passive:false}); base.addEventListener('touchmove', (e)=>{ e.preventDefault(); onMove(e); }, {passive:false}); base.addEventListener('touchend', (e)=>{ e.preventDefault(); end(e); }); base.addEventListener('touchcancel', (e)=>{ e.preventDefault(); end(e); });
-
-        // shoot button
-                const sb = document.getElementById('tc-shoot'); if (sb) { sb.addEventListener('pointerdown', (e)=>{ e.preventDefault(); playSound('shoot'); if (typeof player !== 'undefined' && player && typeof player.shoot === 'function') { player.shoot(); } else { spawnPlayerBulletsAtTouch({ touches: [{ clientX: e.clientX, clientY: e.clientY }] }); } }); sb.addEventListener('touchstart', (e)=>{ e.preventDefault(); playSound('shoot'); if (typeof player !== 'undefined' && player && typeof player.shoot === 'function') { player.shoot(); } else { const t = e.touches && e.touches[0]; spawnPlayerBulletsAtTouch({ touches: [{ clientX: t ? t.clientX : e.clientX, clientY: t ? t.clientY : e.clientY }] }); } }); }
-
-        // tap to aim & shoot as before (but coordinates are logical, translate client to canvas logical coords)
-        canvas.addEventListener('touchstart', (e)=>{
-          e.preventDefault(); const t = e.touches[0]; if (!t) return; // map client to logical
-          const rect = canvas.getBoundingClientRect(); const scaleX = LOGICAL_W / rect.width; const scaleY = LOGICAL_H / rect.height; const lx = (t.clientX - rect.left) * scaleX; const ly = (t.clientY - rect.top) * scaleY; mouse.x = lx; mouse.y = ly; playSound('shoot'); spawnPlayerBulletsAtTouch({ touches: [{ clientX: lx, clientY: ly }] });
-        }, {passive:false});
-
-      } catch(e) {}
-    })();
 
     // Pelin muuttujat
     let isPlaying = false;
@@ -331,11 +276,11 @@
 
     // Ohjauslippueet
     let keys = { up: false, down: false, left: false, right: false };
-    let mouse = { x: LOGICAL_W / 2, y: LOGICAL_H / 2 };
+    let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
 
     let player = {
-      x: LOGICAL_W / 2,
-      y: LOGICAL_H / 2,
+      x: canvas.width / 2,
+      y: canvas.height / 2,
       radius: 22,
       speed: 350,
       angle: 0
@@ -396,8 +341,103 @@
       mouse.y = e.clientY;
     });
 
+    // --- KOSKETUSOHJAIMET (mobiili) ---
+    // Vasen puoli ruudusta = liikkumissauva, oikea puoli = tähtäys & ammunta.
+    // Molemmat piirretään canvasille, jotta pelaaja näkee ne visuaalisesti.
+    const moveStick = { active: false, id: null, baseX: 0, baseY: 0, curX: 0, curY: 0 };
+    const aimStick = { active: false, id: null, baseX: 0, baseY: 0, curX: 0, curY: 0 };
+    let touchMoveVec = { x: 0, y: 0 };
+    const STICK_RADIUS = 50;
+    let autoFireTimer = null;
+
+    function startAutoFire() {
+      stopAutoFire();
+      fireWeapon();
+      autoFireTimer = setInterval(fireWeapon, 320);
+    }
+    function stopAutoFire() {
+      if (autoFireTimer) {
+        clearInterval(autoFireTimer);
+        autoFireTimer = null;
+      }
+    }
+
+    function onTouchStart(e) {
+      e.preventDefault();
+      initAudio();
+      for (const t of e.changedTouches) {
+        const isLeft = t.clientX < canvas.width / 2;
+        if (isLeft && !moveStick.active) {
+          moveStick.active = true;
+          moveStick.id = t.identifier;
+          moveStick.baseX = t.clientX;
+          moveStick.baseY = t.clientY;
+          moveStick.curX = t.clientX;
+          moveStick.curY = t.clientY;
+        } else if (!isLeft && !aimStick.active && isPlaying && !isPaused) {
+          aimStick.active = true;
+          aimStick.id = t.identifier;
+          aimStick.baseX = t.clientX;
+          aimStick.baseY = t.clientY;
+          aimStick.curX = t.clientX;
+          aimStick.curY = t.clientY;
+          mouse.x = t.clientX;
+          mouse.y = t.clientY;
+          startAutoFire();
+        }
+      }
+    }
+
+    function onTouchMove(e) {
+      e.preventDefault();
+      for (const t of e.changedTouches) {
+        if (moveStick.active && t.identifier === moveStick.id) {
+          moveStick.curX = t.clientX;
+          moveStick.curY = t.clientY;
+          let dx = moveStick.curX - moveStick.baseX;
+          let dy = moveStick.curY - moveStick.baseY;
+          const dist = Math.hypot(dx, dy);
+          if (dist > STICK_RADIUS) {
+            dx = (dx / dist) * STICK_RADIUS;
+            dy = (dy / dist) * STICK_RADIUS;
+          }
+          touchMoveVec.x = dx / STICK_RADIUS;
+          touchMoveVec.y = dy / STICK_RADIUS;
+        } else if (aimStick.active && t.identifier === aimStick.id) {
+          aimStick.curX = t.clientX;
+          aimStick.curY = t.clientY;
+          mouse.x = t.clientX;
+          mouse.y = t.clientY;
+        }
+      }
+    }
+
+    function onTouchEnd(e) {
+      for (const t of e.changedTouches) {
+        if (moveStick.active && t.identifier === moveStick.id) {
+          moveStick.active = false;
+          touchMoveVec.x = 0;
+          touchMoveVec.y = 0;
+        }
+        if (aimStick.active && t.identifier === aimStick.id) {
+          aimStick.active = false;
+          stopAutoFire();
+        }
+      }
+    }
+
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+    canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
     window.addEventListener('mousedown', (e) => {
       if (e.button !== 0 || !isPlaying || isPaused) return;
+      fireWeapon();
+    });
+
+    function fireWeapon() {
+      if (!isPlaying || isPaused) return;
 
       playSound('shoot');
       const w = weapons[currentWeaponIndex];
@@ -430,7 +470,7 @@
           });
         }
       }
-    });
+    }
 
     function togglePause() {
       isPaused = !isPaused;
@@ -448,11 +488,11 @@
     function spawnEnemy() {
       let x, y;
       if (Math.random() < 0.5) {
-      x = Math.random() < 0.5 ? -30 : LOGICAL_W + 30;
-      y = Math.random() * LOGICAL_H;
+        x = Math.random() < 0.5 ? -30 : canvas.width + 30;
+        y = Math.random() * canvas.height;
       } else {
-      x = Math.random() * LOGICAL_W;
-      y = Math.random() < 0.5 ? -30 : LOGICAL_H + 30;
+        x = Math.random() * canvas.width;
+        y = Math.random() < 0.5 ? -30 : canvas.height + 30;
       }
 
       enemies.push({
@@ -515,12 +555,18 @@
         moveY *= 0.7071;
       }
 
+      // Kosketussauva ohittaa näppäimistön, jos sitä käytetään (analoginen liike)
+      if (touchMoveVec.x !== 0 || touchMoveVec.y !== 0) {
+        moveX = touchMoveVec.x;
+        moveY = touchMoveVec.y;
+      }
+
       player.x += moveX * player.speed * delta;
       player.y += moveY * player.speed * delta;
 
       // Pysy ruudun sisällä
-      player.x = Math.max(player.radius, Math.min(LOGICAL_W - player.radius, player.x));
-      player.y = Math.max(player.radius, Math.min(LOGICAL_H - player.radius, player.y));
+      player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+      player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
 
       // 3. Viholliset
       if (Date.now() - lastSpawnTime > spawnInterval && enemies.length < maxEnemiesOnScreen) {
@@ -588,7 +634,7 @@
           }
         }
 
-        if (hit || b.x < 0 || b.x > LOGICAL_W || b.y < 0 || b.y > LOGICAL_H) {
+        if (hit || b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
           playerBullets.splice(i, 1);
         }
       }
@@ -605,7 +651,7 @@
           continue;
         }
 
-        if (eb.x < 0 || eb.x > LOGICAL_W || eb.y < 0 || eb.y > LOGICAL_H) {
+        if (eb.x < 0 || eb.x > canvas.width || eb.y < 0 || eb.y > canvas.height) {
           enemyBullets.splice(i, 1);
         }
       }
@@ -636,11 +682,11 @@
 
       // Tausta
       ctx.fillStyle = '#dcb168';
-      ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.fillStyle = '#c79c52';
-      for (let i = 0; i < LOGICAL_W; i += 100) {
-        for (let j = 0; j < LOGICAL_H; j += 100) {
+      for (let i = 0; i < canvas.width; i += 100) {
+        for (let j = 0; j < canvas.height; j += 100) {
           ctx.beginPath();
           ctx.arc(i + 30, j + 40, 3, 0, Math.PI * 2);
           ctx.fill();
@@ -739,11 +785,41 @@
           ctx.shadowColor = '#000';
           ctx.shadowBlur = 8;
           ctx.globalAlpha = Math.min(1, popupTimer);
-          ctx.fillText(popupText, LOGICAL_W / 2, LOGICAL_H / 2 - 70);
+          ctx.fillText(popupText, canvas.width / 2, canvas.height / 2 - 70);
           ctx.restore();
         }
+
+        // Kosketussauvat (piirretään vain kun aktiivisia)
+        drawStick(moveStick);
+        drawStick(aimStick);
       }
 
+      ctx.restore();
+    }
+
+    function drawStick(stick) {
+      if (!stick.active) return;
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(stick.baseX, stick.baseY, STICK_RADIUS, 0, Math.PI * 2);
+      ctx.stroke();
+
+      let dx = stick.curX - stick.baseX;
+      let dy = stick.curY - stick.baseY;
+      const dist = Math.hypot(dx, dy);
+      if (dist > STICK_RADIUS) {
+        dx = (dx / dist) * STICK_RADIUS;
+        dy = (dy / dist) * STICK_RADIUS;
+      }
+
+      ctx.globalAlpha = 0.75;
+      ctx.fillStyle = '#4caf50';
+      ctx.beginPath();
+      ctx.arc(stick.baseX + dx, stick.baseY + dy, 24, 0, Math.PI * 2);
+      ctx.fill();
       ctx.restore();
     }
 
@@ -770,6 +846,10 @@
 
       // Nollataan liikenäppäimet pelin alussa
       keys = { up: false, down: false, left: false, right: false };
+      touchMoveVec = { x: 0, y: 0 };
+      moveStick.active = false;
+      aimStick.active = false;
+      stopAutoFire();
 
       enemies = [];
       playerBullets = [];
@@ -785,8 +865,8 @@
       scoreEl.innerText = '0';
       livesEl.innerText = 'Elämät: ❤️ ❤️ ❤️';
 
-      player.x = LOGICAL_W / 2;
-      player.y = LOGICAL_H / 2;
+      player.x = canvas.width / 2;
+      player.y = canvas.height / 2;
 
       startScreen.classList.add('hidden');
       gameoverScreen.classList.add('hidden');
@@ -805,6 +885,10 @@
 
     document.getElementById('start-btn').addEventListener('click', startGame);
     document.getElementById('restart-btn').addEventListener('click', startGame);
+    document.getElementById('pause-btn').addEventListener('click', () => {
+      if (isPlaying) togglePause();
+    });
+    document.getElementById('resume-btn').addEventListener('click', togglePause);
 
     requestAnimationFrame(gameLoop);
   </script>

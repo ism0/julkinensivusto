@@ -2,7 +2,7 @@
 <html lang="fi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Velho & Kaupungin Yö</title>
     <style>
         * {
@@ -10,6 +10,12 @@
             margin: 0;
             padding: 0;
             user-select: none;
+        }
+
+        html, body {
+            height: 100%;
+            overscroll-behavior: none;
+            touch-action: none;
         }
 
         body {
@@ -20,8 +26,9 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-height: 100vh;
+            min-height: 100svh;
             overflow: hidden;
+            touch-action: none;
         }
 
         #game-container {
@@ -30,12 +37,87 @@
             border-radius: 12px;
             overflow: hidden;
             border: 4px solid #2d1b4e;
+            touch-action: none;
         }
 
         canvas {
             display: block;
             background-color: #05030a;
             image-rendering: pixelated;
+            touch-action: none;
+        }
+
+        /* Mobile on-screen touch controls */
+        #mobile-controls {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            top: 0;
+            z-index: 5;
+            pointer-events: none;
+            display: none;
+        }
+
+        .ctrl-group {
+            position: absolute;
+            bottom: 4%;
+            display: flex;
+            gap: 14px;
+            pointer-events: none;
+        }
+
+        #dpad-group { left: 3%; }
+        #action-group { right: 3%; }
+
+        .ctrl-btn {
+            pointer-events: auto;
+            width: 62px;
+            height: 62px;
+            border-radius: 50%;
+            border: 2px solid rgba(124, 77, 255, 0.8);
+            background: rgba(45, 27, 78, 0.55);
+            color: #ffffff;
+            font-size: 26px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: none;
+            user-select: none;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+        }
+
+        .ctrl-btn:active,
+        .ctrl-btn.active-touch {
+            background: rgba(124, 77, 255, 0.75);
+            transform: scale(0.92);
+        }
+
+        #btn-shoot {
+            border-color: rgba(255, 64, 129, 0.85);
+            width: 72px;
+            height: 72px;
+            font-size: 22px;
+        }
+
+        #btn-jump {
+            align-self: flex-end;
+        }
+
+        /* Show touch controls on coarse-pointer (touchscreen) devices */
+        @media (hover: none) and (pointer: coarse) {
+            #mobile-controls {
+                display: block;
+            }
+        }
+
+        @media (max-width: 480px) {
+            h1 { font-size: 26px; }
+            p { font-size: 13px; }
+            .controls-info { padding: 10px 16px; margin-bottom: 15px; }
+            button { padding: 12px 26px; font-size: 17px; }
         }
 
         .overlay {
@@ -110,28 +192,6 @@
             transform: scale(1.08);
             box-shadow: 0 6px 20px rgba(255, 64, 129, 0.6);
         }
-
-        /* Virtual joystick and action buttons for touch devices */
-        .joystick { position: absolute; bottom: 18px; left: 18px; width: 22vmin; height: 22vmin; max-width:140px; max-height:140px; z-index:26; touch-action:none; }
-        .joystick .joy-base { position:absolute; inset:0; background: rgba(255,255,255,0.04); border-radius:50%; border:2px solid rgba(255,255,255,0.08); display:flex; align-items:center; justify-content:center; }
-        .joystick .joy-knob { position:absolute; left:50%; top:50%; width:44%; height:44%; background:rgba(255,255,255,0.16); border-radius:50%; transform:translate(-50%,-50%); transition: transform 0.04s linear; }
-        .right-actions { position:absolute; bottom:18px; right:18px; display:flex; gap:12px; align-items:center; z-index:26; }
-        .right-actions .tc-btn { width: 18vmin; height:18vmin; max-width:120px; max-height:120px; border-radius:50%; background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.12); color:#fff; font-size:20px; display:flex; align-items:center; justify-content:center; touch-action:none; }
-        @media (min-width: 801px) {
-            .joystick, .right-actions { display: none !important; }
-        }
-
-        /* Ensure touch devices always show touch controls regardless of screen width */
-        @media (pointer: coarse) {
-            .joystick, .right-actions { display: block !important; }
-        }
-
-        /* Also ensure via JS for browsers that don't support pointer media queries */
-
-
-        @media (max-width: 800px) {
-            .overlay { font-size: 1.05rem; }
-        }
     </style>
 </head>
 <body>
@@ -141,12 +201,13 @@
 
     <div id="start-screen" class="overlay">
         <h1>VELHO & KAUPUNGIN YÖ</h1>
-        <p>Tutki 15 eri tasoa kaupungin katolla, tuhoa hirviöt taioillasi ja kerää taika-eliksiirit. <br><span class="highlight">Joka 5. kerätty pullo antaa SUPERHYPYN 30 sekunniksi!</span></p>
+        <p>Tutki 15 eri tasoa kaupungin katolla, tuhoa hirviöt taioillasi ja kerää taika-eliksiirit. <br><span class="highlight">Joka 5. kerätty pullo antaa SUPERHYPYN 30 sekunniksi!</span><br><span class="highlight">Joka tuhottu hirviö vaihtaa loitsusi uuteen!</span></p>
         <div class="controls-info">
             <p style="margin-bottom:8px;"><strong>Ohjausohjeet:</strong></p>
             <p style="margin-bottom:5px;"><span>A / D</span> - Liiku vasemmalle / oikealle</p>
             <p style="margin-bottom:5px;"><span>W / Välilyönti</span> - Hyppy</p>
             <p style="margin-bottom:0;"><span>J / Enter / Hiiri</span> - Ammu taika-ammus</p>
+            <p style="margin-top:8px; margin-bottom:0; font-size:13px;"><span>Kosketusnäyttö:</span> käytä ruudun kulmissa olevia painikkeita</p>
         </div>
         <button id="start-btn">ALOITA PELI</button>
     </div>
@@ -168,15 +229,22 @@
         <p>Mahtavaa! Pelastit kaupungin yön ja läpäisit kaikki 15 haastavaa tasoa!</p>
         <button id="win-restart-btn">PELAA UUDELLEEN</button>
     </div>
+
+    <div id="mobile-controls">
+        <div id="dpad-group" class="ctrl-group">
+            <button id="btn-left" class="ctrl-btn" aria-label="Vasemmalle">◀</button>
+            <button id="btn-right" class="ctrl-btn" aria-label="Oikealle">▶</button>
+        </div>
+        <div id="action-group" class="ctrl-group">
+            <button id="btn-jump" class="ctrl-btn" aria-label="Hyppy">⤒</button>
+            <button id="btn-shoot" class="ctrl-btn" aria-label="Ammu">✦</button>
+        </div>
+    </div>
 </div>
 
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-
-// Logical game size (keeps game coordinates consistent across devices)
-const LOGICAL_W = 800;
-const LOGICAL_H = 500;
 
 const startScreen = document.getElementById('start-screen');
 const levelScreen = document.getElementById('level-screen');
@@ -349,171 +417,7 @@ function playMusicStep(step) {
     }
 }
 
-// responsive canvas & touch support
-let stars = [];
-let cityBuildings = [];
-
-function resizeCanvas() {
-    const dpr = window.devicePixelRatio || 1;
-    // Fit logical game area into viewport while preserving aspect ratio
-    const scale = Math.min(window.innerWidth / LOGICAL_W, window.innerHeight / LOGICAL_H);
-    const cssW = Math.floor(LOGICAL_W * scale);
-    const cssH = Math.floor(LOGICAL_H * scale);
-    canvas.style.width = cssW + 'px';
-    canvas.style.height = cssH + 'px';
-    canvas.width = Math.floor(LOGICAL_W * dpr * scale);
-    canvas.height = Math.floor(LOGICAL_H * dpr * scale);
-    // Transform so all drawing can use logical coordinates (0..LOGICAL_W, 0..LOGICAL_H)
-    ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
-    initStars();
-    initBuildings();
-
-    // Ensure game-container matches canvas size so overlays align (fix landscape issues)
-    const container = document.getElementById('game-container');
-    if (container) {
-        container.style.width = cssW + 'px';
-        container.style.height = cssH + 'px';
-    }
-}
-
-function initStars(){
-    stars.length = 0;
-    for (let i = 0; i < 70; i++) {
-        stars.push({
-            x: Math.random() * LOGICAL_W,
-            y: Math.random() * (LOGICAL_H * 0.7),
-            size: Math.random() * 2 + 1,
-            speed: Math.random() * 0.2 + 0.05,
-            color: ['#ffffff', '#e0f7fa', '#ffe082', '#ea80fc'][Math.floor(Math.random() * 4)]
-        });
-    }
-}
-
-function initBuildings() {
-    cityBuildings.length = 0;
-    for (let x = 0; x < LOGICAL_W; x += 40) {
-        const h = 80 + Math.random() * 120;
-        cityBuildings.push({ x, w: 42, h });
-    }
-}
-
-window.addEventListener('resize', () => { cancelAnimationFrame(animationFrameId); resizeCanvas(); if (gameState === 'PLAYING') runGameLoop(); });
-resizeCanvas();
-
 const keys = { a: false, d: false, w: false, space: false, shoot: false };
-
-// Create a virtual joystick (left) and action buttons (right) for touch devices
-(function createJoystickControls(){
-    try {
-        const container = document.getElementById('game-container');
-        if (!container) return;
-        if (document.getElementById('joystick-left')) return;
-
-        // joystick markup
-        const jl = document.createElement('div');
-        jl.id = 'joystick-left';
-        jl.className = 'joystick';
-        jl.innerHTML = '<div class="joy-base"></div><div class="joy-knob"></div>';
-
-        const actions = document.createElement('div');
-        actions.id = 'action-buttons';
-        actions.className = 'right-actions';
-        actions.innerHTML = '<button id="tc-jump" class="tc-btn">▲</button><button id="tc-shoot" class="tc-btn">●</button>';
-
-        container.appendChild(jl);
-        container.appendChild(actions);
-
-        const base = jl.querySelector('.joy-base');
-        const knob = jl.querySelector('.joy-knob');
-
-        let activePointer = null;
-        let baseRect = null;
-        const maxKnobDist = () => (baseRect ? Math.min(baseRect.width, baseRect.height) * 0.45 : 40);
-
-        function start(e) {
-            e.preventDefault();
-            if (activePointer !== null) return;
-        // support both PointerEvent and TouchEvent wrappers
-        const pid = (e.pointerId !== undefined) ? e.pointerId : ('touch-' + (e.changedTouches ? e.changedTouches[0].identifier : '0'));
-        activePointer = pid;
-        baseRect = base.getBoundingClientRect();
-        try { if (e.pointerId !== undefined) base.setPointerCapture(e.pointerId); } catch(_) {}
-        onMove(e);
-    }
-    function onMove(e) {
-        // normalize event for touch vs pointer
-        let clientX = e.clientX, clientY = e.clientY;
-        if (e.touches && e.touches.length) { clientX = e.touches[0].clientX; clientY = e.touches[0].clientY; }
-        const cx = baseRect.left + baseRect.width / 2;
-        const cy = baseRect.top + baseRect.height / 2;
-        const dx = clientX - cx;
-        const dy = clientY - cy;
-        const r = Math.hypot(dx, dy);
-        const maxR = maxKnobDist();
-        const clampedR = Math.min(r, maxR);
-        const nx = (r === 0) ? 0 : dx / r;
-        const ny = (r === 0) ? 0 : dy / r;
-        knob.style.transform = `translate(${nx * clampedR}px, ${ny * clampedR}px)`;
-
-        // Map joystick x-axis to left/right
-        const xNorm = dx / maxR;
-        keys.a = xNorm < -0.35;
-        keys.d = xNorm > 0.35;
-
-        // Upwards quick push triggers jump (one-shot)
-        const yNorm = dy / maxR;
-        if (yNorm < -0.6 && gameState === 'PLAYING') {
-            keys.w = true;
-            setTimeout(()=>{ keys.w = false; }, 150);
-        }
-    }
-    function end(e) {
-        // release for both pointer and touch
-        try { if (e.pointerId !== undefined) base.releasePointerCapture(e.pointerId); } catch(_) {}
-        activePointer = null;
-        knob.style.transform = 'translate(-50%,-50%)';
-        keys.a = false; keys.d = false; keys.w = false;
-    }
-
-    // Pointer event handlers (preferred)
-    base.addEventListener('pointerdown', start, { passive: false });
-    base.addEventListener('pointermove', (e)=>{ if (e.buttons || e.pointerType) onMove(e); }, { passive: false });
-    base.addEventListener('pointerup', end);
-    base.addEventListener('pointercancel', end);
-
-    // Touch fallback for browsers that don't emit pointer events reliably (Samsung Internet edge cases)
-    base.addEventListener('touchstart', (e)=>{ e.preventDefault(); start(e); }, { passive: false });
-    base.addEventListener('touchmove', (e)=>{ e.preventDefault(); onMove(e); }, { passive: false });
-    base.addEventListener('touchend', (e)=>{ e.preventDefault(); end(e); });
-    base.addEventListener('touchcancel', (e)=>{ e.preventDefault(); end(e); });
-
-    // Action buttons
-    const jb = document.getElementById('tc-jump');
-    const sb = document.getElementById('tc-shoot');
-    if (jb) { jb.addEventListener('pointerdown', (e)=>{ e.preventDefault(); keys.w = true; }); jb.addEventListener('pointerup', (e)=>{ keys.w = false; }); jb.addEventListener('touchstart', (e)=>{ e.preventDefault(); keys.w = true; }); jb.addEventListener('touchend', (e)=>{ e.preventDefault(); keys.w = false; }); }
-    if (sb) { sb.addEventListener('pointerdown', (e)=>{ e.preventDefault(); if (gameState === 'PLAYING' && typeof player !== 'undefined' && player && typeof player.shoot === 'function') player.shoot(); }); sb.addEventListener('touchstart', (e)=>{ e.preventDefault(); if (gameState === 'PLAYING' && typeof player !== 'undefined' && player && typeof player.shoot === 'function') player.shoot(); }); }
-
-    // Prevent page scroll when interacting with game container
-    document.body.addEventListener('touchmove', (ev) => {
-        if (ev.target.closest && ev.target.closest('#game-container')) ev.preventDefault();
-    }, { passive: false });
-
-    // If this is a touch device but CSS media query failed, force-show controls and adjust start-screen text
-    function ensureTouchUI() {
-        const touch = (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) || ('ontouchstart' in window) || navigator.userAgent.includes('Mobi');
-        if (touch) {
-            const els = document.querySelectorAll('.joystick, .right-actions');
-            els.forEach(el => { el.style.display = 'block'; });
-            const info = document.querySelector('#start-screen .controls-info');
-            if (info) {
-                info.innerHTML = '<p style="margin-bottom:8px;"><strong>Ohjaus puhelimella:</strong></p><p style="margin-bottom:5px;">Vasemmalla: virtuaalinen joystick — liiku; Oikealla: ▲ hyppy, ● ammus</p><p style="margin-bottom:0;">Käännä laite vaakaan pelataksesi vaakatasoa varten.</p>';
-            }
-        }
-    }
-    ensureTouchUI();
-
-} catch(e) { /* ignore for older browsers */ }
-})();
 
 window.addEventListener('keydown', (e) => {
     if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') keys.a = true;
@@ -538,29 +442,135 @@ canvas.addEventListener('mousedown', () => {
     if (gameState === 'PLAYING') player.shoot();
 });
 
-/* stars & buildings are initialized in initStars() and initBuildings() */
+// ---- Responsive scaling for mobile/small screens ----
+// The game logic always runs at a fixed internal resolution (canvas.width/height,
+// set in the HTML attributes). We only scale how big it is DISPLAYED via CSS,
+// so gameplay coordinates never change, but it fits any screen size.
+const gameContainer = document.getElementById('game-container');
+const baseWidth = canvas.width;
+const baseHeight = canvas.height;
+const baseAspect = baseWidth / baseHeight;
+
+function resizeGame() {
+    const availW = window.innerWidth * 0.98;
+    const availH = window.innerHeight * 0.98;
+
+    let displayWidth = availW;
+    let displayHeight = displayWidth / baseAspect;
+
+    if (displayHeight > availH) {
+        displayHeight = availH;
+        displayWidth = displayHeight * baseAspect;
+    }
+
+    gameContainer.style.width = displayWidth + 'px';
+    gameContainer.style.height = displayHeight + 'px';
+    canvas.style.width = displayWidth + 'px';
+    canvas.style.height = displayHeight + 'px';
+}
+
+window.addEventListener('resize', resizeGame);
+window.addEventListener('orientationchange', resizeGame);
+resizeGame();
+
+// ---- Mobile touch controls ----
+// Buttons mirror the keyboard "keys" state object, so all existing game
+// logic (player.update, shoot, etc.) works unchanged for touch input.
+function bindHoldButton(el, onDown, onUp) {
+    if (!el) return;
+
+    const handleDown = (e) => {
+        e.preventDefault();
+        el.classList.add('active-touch');
+        onDown();
+    };
+    const handleUp = (e) => {
+        e.preventDefault();
+        el.classList.remove('active-touch');
+        onUp();
+    };
+
+    el.addEventListener('touchstart', handleDown, { passive: false });
+    el.addEventListener('touchend', handleUp, { passive: false });
+    el.addEventListener('touchcancel', handleUp, { passive: false });
+    // Also support mouse, in case someone uses a touch-emulated / hybrid device
+    el.addEventListener('mousedown', handleDown);
+    el.addEventListener('mouseup', handleUp);
+    el.addEventListener('mouseleave', handleUp);
+}
+
+const btnLeft = document.getElementById('btn-left');
+const btnRight = document.getElementById('btn-right');
+const btnJump = document.getElementById('btn-jump');
+const btnShoot = document.getElementById('btn-shoot');
+
+bindHoldButton(btnLeft,
+    () => { keys.a = true; },
+    () => { keys.a = false; }
+);
+
+bindHoldButton(btnRight,
+    () => { keys.d = true; },
+    () => { keys.d = false; }
+);
+
+bindHoldButton(btnJump,
+    () => { keys.w = true; initAudio(); },
+    () => { keys.w = false; }
+);
+
+bindHoldButton(btnShoot,
+    () => {
+        initAudio();
+        if (!keys.shoot && gameState === 'PLAYING') player.shoot();
+        keys.shoot = true;
+    },
+    () => { keys.shoot = false; }
+);
+
+// Prevent double-tap-to-zoom and other default touch gestures anywhere on the page
+document.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
+document.addEventListener('dblclick', (e) => { e.preventDefault(); });
+
+// Taustakuvat
+const stars = [];
+for (let i = 0; i < 70; i++) {
+    stars.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * (canvas.height * 0.7),
+        size: Math.random() * 2 + 1,
+        speed: Math.random() * 0.2 + 0.05,
+        color: ['#ffffff', '#e0f7fa', '#ffe082', '#ea80fc'][Math.floor(Math.random() * 4)]
+    });
+}
+
+const cityBuildings = [];
+for (let x = 0; x < canvas.width; x += 40) {
+    const h = 80 + Math.random() * 120;
+    cityBuildings.push({ x, w: 42, h });
+}
 
 function updateAndDrawBackground() {
-    let grad = ctx.createLinearGradient(0, 0, 0, LOGICAL_H);
+    let grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
     grad.addColorStop(0, '#090514');
     grad.addColorStop(0.6, '#180e29');
     grad.addColorStop(1, '#2c163b');
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     stars.forEach(s => {
         s.x -= s.speed;
-        if (s.x < 0) s.x = LOGICAL_W;
+        if (s.x < 0) s.x = canvas.width;
         ctx.fillStyle = s.color;
         ctx.fillRect(Math.floor(s.x), Math.floor(s.y), s.size, s.size);
     });
 
     ctx.fillStyle = '#110a1f';
     cityBuildings.forEach(b => {
-        ctx.fillRect(b.x, LOGICAL_H - b.h, b.w, b.h);
+        ctx.fillRect(b.x, canvas.height - b.h, b.w, b.h);
         ctx.fillStyle = '#ffd54f';
         for (let ix = b.x + 6; ix < b.x + b.w - 8; ix += 12) {
-            for (let iy = LOGICAL_H - b.h + 10; iy < LOGICAL_H - 20; iy += 18) {
+            for (let iy = canvas.height - b.h + 10; iy < canvas.height - 20; iy += 18) {
                 if ((ix + iy) % 3 === 0) {
                     ctx.fillRect(ix, iy, 5, 8);
                 }
@@ -636,6 +646,39 @@ const elixirSprite = [
 
 let superParticles = [];
 
+// --- LOITSUVALIKOIMA (aseet) ---
+// Joka tuhotusta hirviöstä velho saa uuden loitsun kierrossa.
+// "shots" kuvaa jokaisen laukauksen pystysuuntaisen nopeuskomponentin (vy),
+// vaakanopeus tulee "speed" arvosta kerrottuna suunnalla, johon velho katsoo.
+const weapons = [
+    { name: 'Taikanuoli',        color: '#00e5ff', radius: 5,  speed: 5.0, shots: [{ vy: 0 }] },
+    { name: 'Kaksoisloitsu',     color: '#7c4dff', radius: 5,  speed: 5.5, shots: [{ vy: -1.6 }, { vy: 1.6 }] },
+    { name: 'Kolmoishaulikko',   color: '#ff4081', radius: 4,  speed: 6.0, shots: [{ vy: -2.2 }, { vy: 0 }, { vy: 2.2 }] },
+    { name: 'Jääsäde',           color: '#80deea', radius: 9,  speed: 3.3, shots: [{ vy: 0 }] },
+    { name: 'Salamasarja',       color: '#ffd700', radius: 3,  speed: 8.0, shots: [{ vy: -3 }, { vy: -1 }, { vy: 1 }, { vy: 3 }] },
+    { name: 'Kultainen Pallo',   color: '#ffab00', radius: 13, speed: 2.6, shots: [{ vy: 0 }] }
+];
+let currentWeaponIndex = 0;
+let spellPopupText = '';
+let spellPopupTimer = 0;
+
+function playWeaponChangeSound() {
+    try {
+        initAudio();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(700, audioCtx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+    } catch(e) {}
+}
+
 class Player {
     constructor() {
         this.width = 33;
@@ -671,10 +714,13 @@ class Player {
     }
 
     shoot() {
+        const weapon = weapons[currentWeaponIndex];
+        const dir = this.facingLeft ? -1 : 1;
         const pX = this.facingLeft ? this.x - 5 : this.x + this.width + 5;
         const pY = this.y + 15;
-        const dir = this.facingLeft ? -1 : 1;
-        projectiles.push(new Projectile(pX, pY, dir));
+        weapon.shots.forEach(s => {
+            projectiles.push(new Projectile(pX, pY, dir * weapon.speed, s.vy, weapon.color, weapon.radius));
+        });
         playShootSound();
     }
 
@@ -705,9 +751,9 @@ class Player {
         this.y += this.vy;
 
         if (this.x < 0) this.x = 0;
-        if (this.x + this.width > LOGICAL_W) this.x = LOGICAL_W - this.width;
+        if (this.x + this.width > canvas.width) this.x = canvas.width - this.width;
 
-        if (this.y > LOGICAL_H + 50) {
+        if (this.y > canvas.height + 50) {
             this.hp--;
             if (this.hp > 0) {
                 this.x = 50;
@@ -749,18 +795,21 @@ class Player {
 }
 
 class Projectile {
-    constructor(x, y, dir) {
+    constructor(x, y, vx, vy, color, radius) {
         this.x = x;
         this.y = y;
-        this.radius = 5;
-        this.speed = 5 * dir;
+        this.radius = radius || 5;
+        this.vx = vx;
+        this.vy = vy || 0;
+        this.color = color || '#00e5ff';
         this.alive = true;
         this.sparkles = [];
     }
 
     update() {
-        this.x += this.speed;
-        if (this.x < -20 || this.x > LOGICAL_W + 20) this.alive = false;
+        this.x += this.vx;
+        this.y += this.vy;
+        if (this.x < -20 || this.x > canvas.width + 20 || this.y < -20 || this.y > canvas.height + 20) this.alive = false;
 
         this.sparkles.push({
             x: this.x + (Math.random() * 6 - 3),
@@ -779,7 +828,7 @@ class Projectile {
             ctx.fillRect(s.x, s.y, 3, 3);
         });
 
-        ctx.fillStyle = '#00e5ff';
+        ctx.fillStyle = this.color;
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
         ctx.fill();
@@ -1265,6 +1314,11 @@ function gameLoop(timestamp) {
                 if (checkAABB(eBox, pBox)) {
                     enemy.alive = false;
                     proj.alive = false;
+
+                    currentWeaponIndex = (currentWeaponIndex + 1) % weapons.length;
+                    spellPopupText = 'UUSI LOITSU: ' + weapons[currentWeaponIndex].name.toUpperCase() + '!';
+                    spellPopupTimer = 90;
+                    playWeaponChangeSound();
                 }
             }
         });
@@ -1312,6 +1366,8 @@ function gameLoop(timestamp) {
     }
 
     drawHUD(remainingCollectibles);
+
+    if (spellPopupTimer > 0) spellPopupTimer--;
 }
 
 function drawHUD(remaining) {
@@ -1345,6 +1401,27 @@ function drawHUD(remaining) {
 
     ctx.fillStyle = '#ff4081';
     ctx.fillText(`JÄLJELLÄ: ${remaining}`, 640, 36);
+
+    ctx.fillStyle = 'rgba(15, 10, 30, 0.85)';
+    ctx.fillRect(10, 56, 780, 26);
+    ctx.strokeStyle = '#7c4dff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(10, 56, 780, 26);
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillStyle = weapons[currentWeaponIndex].color;
+    ctx.fillText(`LOITSU: ${weapons[currentWeaponIndex].name}`, 20, 74);
+
+    if (spellPopupTimer > 0) {
+        ctx.save();
+        ctx.font = 'bold 22px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = weapons[currentWeaponIndex].color;
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 8;
+        ctx.globalAlpha = Math.min(1, spellPopupTimer / 20);
+        ctx.fillText(spellPopupText, canvas.width / 2, 130);
+        ctx.restore();
+    }
 }
 
 function setGameState(newState) {
@@ -1375,6 +1452,7 @@ function setGameState(newState) {
 
 startBtn.addEventListener('click', () => {
     currentLevel = 1;
+    currentWeaponIndex = 0;
     loadLevel(currentLevel);
     setGameState('PLAYING');
 });
@@ -1386,12 +1464,14 @@ nextLevelBtn.addEventListener('click', () => {
 });
 
 restartBtn.addEventListener('click', () => {
+    currentWeaponIndex = 0;
     loadLevel(currentLevel);
     setGameState('PLAYING');
 });
 
 winRestartBtn.addEventListener('click', () => {
     currentLevel = 1;
+    currentWeaponIndex = 0;
     loadLevel(currentLevel);
     setGameState('PLAYING');
 });
