@@ -47,38 +47,33 @@
             touch-action: none;
         }
 
-        /* Mobile on-screen touch controls */
+        /* Mobile on-screen touch controls: a bar BELOW the game, not on top of it */
         #mobile-controls {
-            position: absolute;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            top: 0;
-            z-index: 5;
-            pointer-events: none;
             display: none;
+            width: 100%;
+            max-width: 800px;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 4%;
+            margin-top: 12px;
+            box-sizing: border-box;
+            flex-shrink: 0;
         }
 
         .ctrl-group {
-            position: absolute;
-            bottom: 4%;
             display: flex;
             gap: 14px;
-            pointer-events: none;
+            align-items: center;
         }
 
-        #dpad-group { left: 3%; }
-        #action-group { right: 3%; }
-
         .ctrl-btn {
-            pointer-events: auto;
-            width: 62px;
-            height: 62px;
+            width: 58px;
+            height: 58px;
             border-radius: 50%;
             border: 2px solid rgba(124, 77, 255, 0.8);
-            background: rgba(45, 27, 78, 0.55);
+            background: rgba(45, 27, 78, 0.75);
             color: #ffffff;
-            font-size: 26px;
+            font-size: 24px;
             font-weight: bold;
             display: flex;
             align-items: center;
@@ -91,25 +86,21 @@
 
         .ctrl-btn:active,
         .ctrl-btn.active-touch {
-            background: rgba(124, 77, 255, 0.75);
+            background: rgba(124, 77, 255, 0.9);
             transform: scale(0.92);
         }
 
         #btn-shoot {
             border-color: rgba(255, 64, 129, 0.85);
-            width: 72px;
-            height: 72px;
-            font-size: 22px;
-        }
-
-        #btn-jump {
-            align-self: flex-end;
+            width: 66px;
+            height: 66px;
+            font-size: 20px;
         }
 
         /* Show touch controls on coarse-pointer (touchscreen) devices */
         @media (hover: none) and (pointer: coarse) {
             #mobile-controls {
-                display: block;
+                display: flex;
             }
         }
 
@@ -232,16 +223,16 @@
         <p>Mahtavaa! Pelastit kaupungin yön ja läpäisit kaikki 15 haastavaa tasoa!</p>
         <button id="win-restart-btn">PELAA UUDELLEEN</button>
     </div>
+</div>
 
-    <div id="mobile-controls">
-        <div id="dpad-group" class="ctrl-group">
-            <button id="btn-left" class="ctrl-btn" aria-label="Vasemmalle">◀</button>
-            <button id="btn-right" class="ctrl-btn" aria-label="Oikealle">▶</button>
-        </div>
-        <div id="action-group" class="ctrl-group">
-            <button id="btn-jump" class="ctrl-btn" aria-label="Hyppy">⤒</button>
-            <button id="btn-shoot" class="ctrl-btn" aria-label="Ammu">✦</button>
-        </div>
+<div id="mobile-controls">
+    <div id="dpad-group" class="ctrl-group">
+        <button id="btn-left" class="ctrl-btn" aria-label="Vasemmalle">◀</button>
+        <button id="btn-right" class="ctrl-btn" aria-label="Oikealle">▶</button>
+    </div>
+    <div id="action-group" class="ctrl-group">
+        <button id="btn-jump" class="ctrl-btn" aria-label="Hyppy">⤒</button>
+        <button id="btn-shoot" class="ctrl-btn" aria-label="Ammu">✦</button>
     </div>
 </div>
 
@@ -454,9 +445,16 @@ const baseWidth = canvas.width;
 const baseHeight = canvas.height;
 const baseAspect = baseWidth / baseHeight;
 
+const mobileControls = document.getElementById('mobile-controls');
+
 function resizeGame() {
+    // If the touch control bar is visible, reserve its height below the
+    // canvas so the two never overlap and both stay fully on screen.
+    const controlsVisible = getComputedStyle(mobileControls).display !== 'none';
+    const controlsHeight = controlsVisible ? mobileControls.offsetHeight + 12 : 0; // +12 = its margin-top gap
+
     const availW = window.innerWidth * 0.98;
-    const availH = window.innerHeight * 0.98;
+    const availH = (window.innerHeight - controlsHeight) * 0.98;
 
     let displayWidth = availW;
     let displayHeight = displayWidth / baseAspect;
@@ -470,11 +468,15 @@ function resizeGame() {
     gameContainer.style.height = displayHeight + 'px';
     canvas.style.width = displayWidth + 'px';
     canvas.style.height = displayHeight + 'px';
+    mobileControls.style.maxWidth = displayWidth + 'px';
 }
 
 window.addEventListener('resize', resizeGame);
 window.addEventListener('orientationchange', resizeGame);
 resizeGame();
+// Controls only get their real height after the browser paints them, so
+// re-run once more shortly after load to correct any first-pass estimate.
+setTimeout(resizeGame, 50);
 
 // ---- Mobile touch controls ----
 // Buttons mirror the keyboard "keys" state object, so all existing game
